@@ -513,6 +513,7 @@ chip(Math.round(D.stats.cableKm).toLocaleString() + ' km', 'on cables', D.stats.
 if (D.stats.rttMs != null) chip(fmt(D.stats.rttMs, 0) + ' ms', 'observed RTT');
 if (D.stats.floorMs) chip(fmt(D.stats.floorMs, 0) + ' ms', 'fibre floor');
 if (!D.cables.real) chip('illustrative cables', '', 'warn');
+else if (D.cables.note) chip('cached cable data', '', 'warn');
 tc.appendChild(chips);
 
 const lg = $('#legend');
@@ -526,7 +527,8 @@ dotRow('#ff5d7a', 'TTL 0: dropped at this router');
 
 const credit = $('#credit');
 credit.textContent = (D.cables.attribution ? D.cables.attribution + '  ·  ' : '') + 'Basemap: Natural Earth via world-atlas';
-if (!D.cables.real) credit.classList.add('amber');
+if (!D.cables.real || D.cables.note) credit.classList.add('amber');
+if (D.cables.note) credit.textContent = D.cables.note + '  ·  ' + credit.textContent;
 
 /* ---------- view control ---------- */
 function flyTo(st) {

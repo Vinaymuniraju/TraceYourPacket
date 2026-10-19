@@ -52,12 +52,17 @@ class Cable:
     lines: list[list[LonLat]]
 
 
+class CableDataError(Exception):
+    """Cable data was required but could not be loaded."""
+
+
 @dataclass
 class CableSet:
     cables: list[Cable]
     source: str  # "telegeography", "file", "illustrative" or "none"
     attribution: str
     real: bool
+    note: str = ""  # why this is not the first-choice data (fallback, stale cache), else ""
 
 
 @dataclass
@@ -133,8 +138,12 @@ def _color_for(name: str) -> str:
 
 def parse_geojson(data: dict) -> list[Cable]:
     """Accepts a FeatureCollection of LineString / MultiLineString features."""
+    if not isinstance(data, dict) or not isinstance(data.get("features"), list):
+        raise ValueError("not a GeoJSON FeatureCollection")
     cables: list[Cable] = []
-    for feat in data.get("features", []):
+    for feat in data["features"]:
+        if not isinstance(feat, dict):
+            continue
         geom = feat.get("geometry") or {}
         props = feat.get("properties") or {}
         if geom.get("type") == "LineString":
@@ -144,10 +153,13 @@ def parse_geojson(data: dict) -> list[Cable]:
         else:
             continue
         lines = []
-        for ln in raw:
-            pts = [(float(p[0]), float(p[1])) for p in ln if len(p) >= 2]
-            if len(pts) >= 2:
-                lines.append(pts)
+        try:
+            for ln in raw:
+                pts = [(float(p[0]), float(p[1])) for p in ln if len(p) >= 2]
+                if len(pts) >= 2:
+                    lines.append(pts)
+        except (TypeError, ValueError):
+            continue  # skip a malformed feature, keep the rest
         if not lines:
             continue
         name = str(props.get("name") or "Unnamed cable")
@@ -167,51 +179,100 @@ def default_cache_dir() -> Path:
     return Path(base) / "tracemap"
 
 
+MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024
+MIN_REAL_CABLES = 20  # the real map has hundreds; far fewer means a wrong or truncated file
+
+
+def _read_cache(cache: Path) -> Optional[list[Cable]]:
+    try:
+        cables = parse_geojson(json.loads(cache.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    return cables if len(cables) >= MIN_REAL_CABLES else None
+
+
+def _age_text(cache: Path) -> str:
+    days = (time.time() - cache.stat().st_mtime) / 86400
+    return "today" if days < 1 else f"{int(days)} days ago"
+
+
 def fetch_telegeography(cache_dir: Optional[Path] = None, timeout: float = 20.0,
-                        max_age_days: float = 14.0) -> Optional[list[Cable]]:
-    """Download (or reuse the cached copy of) TeleGeography's cable GeoJSON."""
-    cache_dir = cache_dir or default_cache_dir()
-    cache = cache_dir / "cable-geo.json"
-    fresh = cache.exists() and (time.time() - cache.stat().st_mtime) < max_age_days * 86400
-    if not fresh:
-        req = urllib.request.Request(CABLE_URL, headers={"User-Agent": "tracemap/2.0"})
+                        max_age_days: float = 14.0, force: bool = False,
+                        offline: bool = False, opener=None) -> tuple[Optional[list[Cable]], str]:
+    """Return (cables, note). cables is None when nothing usable exists.
+
+    A cached copy younger than max_age_days is used without touching the network. Otherwise the
+    data is downloaded, checked (size cap, valid JSON, plausible number of cables) and written to
+    the cache atomically. If the download fails, an older cached copy is used and `note` says so.
+    `opener` replaces urllib.request.urlopen (for tests).
+    """
+    opener = opener or urllib.request.urlopen
+    cache = (cache_dir or default_cache_dir()) / "cable-geo.json"
+    have = cache.exists()
+    fresh = have and not force and (time.time() - cache.stat().st_mtime) < max_age_days * 86400
+    reason = ""
+    if not fresh and not offline:
+        req = urllib.request.Request(CABLE_URL, headers={
+            "User-Agent": "TraceYourPacket/2.0 (+https://github.com/Vinaymuniraju/TraceYourPacket)"})
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read()
-            json.loads(body)  # validate before caching
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            cache.write_bytes(body)
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            with opener(req, timeout=timeout) as resp:
+                body = resp.read(MAX_DOWNLOAD_BYTES + 1)
+            if len(body) > MAX_DOWNLOAD_BYTES:
+                raise ValueError("response larger than %d MB" % (MAX_DOWNLOAD_BYTES // 2**20))
+            cables = parse_geojson(json.loads(body))
+            if len(cables) < MIN_REAL_CABLES:
+                raise ValueError("only %d cables in the download, expected many more" % len(cables))
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache.with_suffix(".tmp")
+            tmp.write_bytes(body)
+            os.replace(tmp, cache)  # a crash never leaves a half-written cache
+            return cables, ""
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError, AttributeError) as exc:
+            reason = f"download failed ({exc.__class__.__name__}: {exc})"
             log.warning("could not fetch cable data: %s", exc)
-    if cache.exists():  # fresh, just downloaded, or stale but better than nothing
-        try:
-            cables = parse_geojson(json.loads(cache.read_text()))
-            return cables or None
-        except (OSError, ValueError):
-            return None
-    return None
+    cached = _read_cache(cache) if cache.exists() else None
+    if cached:
+        note = ""
+        if reason:
+            note = f"{reason}; using the copy cached {_age_text(cache)}"
+        elif offline and not fresh:
+            note = f"offline; using the copy cached {_age_text(cache)}"
+        return cached, note
+    if not reason:
+        reason = "offline and no cached copy" if offline else "no usable cached copy"
+    return None, reason
 
 
 def load_cables(mode: str = "auto", path: Optional[Path] = None, offline: bool = False,
-                cache_dir: Optional[Path] = None) -> CableSet:
-    """mode: auto | telegeography | illustrative | none."""
+                cache_dir: Optional[Path] = None, refresh: bool = False,
+                opener=None) -> CableSet:
+    """mode: auto | telegeography | illustrative | none.
+
+    `telegeography` raises CableDataError when real data is unavailable. `auto` falls back to the
+    illustrative corridors and records why in CableSet.note.
+    """
     if mode == "none":
         return CableSet([], "none", "", False)
     if path:
-        cables = parse_geojson(json.loads(Path(path).read_text()))
-        illustrative = bool(cables) and all("Illustrative corridor" in c.name for c in cables)
+        try:
+            cables = parse_geojson(json.loads(Path(path).read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            raise CableDataError(f"cannot read cable file {path}: {exc}") from exc
+        if not cables:
+            raise CableDataError(f"{path} contains no LineString or MultiLineString cables")
+        illustrative = all("Illustrative corridor" in c.name for c in cables)
         return CableSet(cables, "illustrative" if illustrative else "file",
                         ATTRIBUTION_ILLUSTRATIVE if illustrative else f"Cable data: {Path(path).name}",
                         not illustrative)
+    note = ""
     if mode in ("auto", "telegeography"):
-        cache = (cache_dir or default_cache_dir()) / "cable-geo.json"
-        if not offline or cache.exists():
-            got = fetch_telegeography(cache_dir) if not offline else parse_geojson(json.loads(cache.read_text()))
-            if got:
-                return CableSet(got, "telegeography", ATTRIBUTION_TG, True)
+        got, why = fetch_telegeography(cache_dir, offline=offline, force=refresh, opener=opener)
+        if got:
+            return CableSet(got, "telegeography", ATTRIBUTION_TG, True, why)
         if mode == "telegeography":
-            log.warning("TeleGeography data unavailable; using illustrative corridors")
-    return CableSet(load_illustrative(), "illustrative", ATTRIBUTION_ILLUSTRATIVE, False)
+            raise CableDataError(f"TeleGeography cable data unavailable: {why}")
+        note = f"Real cable data unavailable ({why}); showing illustrative corridors"
+    return CableSet(load_illustrative(), "illustrative", ATTRIBUTION_ILLUSTRATIVE, False, note)
 
 
 # --------------------------------------------------------------------------

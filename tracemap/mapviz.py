@@ -135,6 +135,7 @@ def build_map_data(
             "source": cableset.source,
             "attribution": cableset.attribution,
             "real": cableset.real,
+            "note": cableset.note,
         },
         "stats": {
             "totalKm": total,

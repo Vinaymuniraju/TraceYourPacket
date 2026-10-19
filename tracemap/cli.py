@@ -54,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="use your own cable GeoJSON instead of downloading")
     p.add_argument("--png", action="store_true",
                    help="also write the classic static PNG map (default: only when no cable map is made)")
+    p.add_argument("--refresh-cables", action="store_true",
+                   help="ignore the cached cable data and download it again")
     p.add_argument("--no-map", action="store_true", help="skip the interactive cable map")
     p.add_argument("--no-report", action="store_true", help="skip the HTML packet-path report")
     p.add_argument("--show", action="store_true", help="open an interactive map window")
@@ -149,10 +151,17 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     map_doc, cable_html, hop_notes = None, "", None
     if not args.no_map and args.cables != "none":
-        from .cables import load_cables
+        from .cables import CableDataError, load_cables
         from .mapviz import build_map_data, cable_section_html, hop_cable_notes, render_map
 
-        cs = load_cables(args.cables, args.cables_file, offline=args.offline)
+        try:
+            cs = load_cables(args.cables, args.cables_file, offline=args.offline,
+                             refresh=args.refresh_cables)
+        except CableDataError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if cs.note:
+            print(f"note:   {cs.note}", file=sys.stderr)
         mdata = build_map_data(trace, geo, method, cs, args.origin)
         if mdata:
             map_doc = render_map(mdata)
