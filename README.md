@@ -88,13 +88,17 @@ python -m tracemap.cli TARGET [options]      # same thing
 | `--method udp\|icmp\|tcp` | Probe type. Default `udp`. `icmp` and `tcp` use `traceroute -I` / `-T` and usually need root. `tracert` on Windows is always ICMP |
 | `--max-hops N` | Maximum TTL, 1 to 64 (default 25) |
 | `--timeout S` | Kill traceroute after S seconds (default 300) |
-| `--input FILE` | Parse a saved `traceroute` or `tracert` output instead of running one |
+| `--input FILE` | Parse a saved `traceroute` or `tracert` output instead of running one. Repeat it to merge several runs |
 | `--geo-file JSON` | IP to location entries, used before anything else |
 | `--offline` | Never call the geolocation API or download cable data (uses `--geo-file`, the cache and bundled data only) |
 | `--no-cache` | Do not read or write the geolocation cache |
 | `--origin LAT,LON` | Draw your own location as the start of the route |
 | `--cables auto\|telegeography\|illustrative\|none` | Cable data source for the map (default `auto`) |
 | `--cables-file GEOJSON` | Use your own cable GeoJSON instead of downloading |
+| `--asn-file JSON` | Prefix to AS number and name entries, used before any lookup (`samples/asn_sample.json`) |
+| `--no-asn` | Do not look up which network (AS) owns each hop |
+| `--probes N` | Probes per hop on Linux/macOS, 1 to 10 (default 3). More probes reveal more load-balanced branches |
+| `--runs N` | Run traceroute N times (1 to 5) and merge the results |
 | `--refresh-cables` | Ignore the cached cable data and download it again |
 | `--no-rdns` | Do not look up router hostnames (they are used as location hints; see below) |
 | `--open` | Open the finished report in your browser |
@@ -168,6 +172,36 @@ Sections:
    and the destination, plus what this program does before and after.
 7. **Packet anatomy:** IPv4 and UDP/ICMP/TCP headers of a probe and of the ICMP "time exceeded"
    reply, with the fields that make traceroute work highlighted.
+
+## Networks, branches and latency
+
+**Networks (ASNs).** Every hop address belongs to a network. TraceYourPacket looks each public hop up
+in RIPEstat (cached in `~/.cache/tracemap/asn.json`), or in your `--asn-file`, and then:
+
+- colours the route on the map by network, with a legend and a "Networks" layer toggle,
+- shows the operator under every hop in the hop list and in the report,
+- lists the **handoffs**: where the colour changes, one operator passes your traffic to the next.
+  The first change is marked "you leave your ISP",
+- treats private and carrier-grade NAT addresses as your own or your ISP's network (grey, never looked up).
+
+**Load-balanced branches.** When several routers answer the same TTL, the router before it is splitting
+traffic across equal-cost paths. The main router (the one that answered most probes) stays on the route.
+The others appear as dashed branches on the map (zoom in to see their labels) and as a "Load balanced"
+line in the hop list. The report gives the share of probes per router. To find more branches, send more
+probes (`--probes 8`) or merge runs (`--runs 3`, or `--input a.txt --input b.txt`).
+
+**Latency per leg.** A bar chart of how much RTT each leg of the path adds, with a tick for the least light
+needs in fibre over that distance. The report calls out the biggest excess and gives each leg a verdict:
+
+| Verdict | Meaning |
+|---|---|
+| near the limit | Step is within 1.5x of the physical minimum |
+| some detour | 1.5x to 3x, or less than 20 ms over: fibre is rarely a straight line |
+| excess latency | More than 3x and more than 20 ms over: longer real route, congestion or a slow reply path |
+| asymmetric? | Step is negative or under 70% of the minimum: the reply path differs, or the location is wrong |
+| short link | Under 2 ms minimum; mostly router delay |
+
+Traceroute sees only the forward path, so these are hints, not measurements of one network's quality.
 
 ## Checking the locations
 
@@ -266,6 +300,7 @@ Consequences you should keep in mind:
 | World map | Natural Earth via `world-atlas` 2.0.2 | Public domain (Natural Earth), ISC (package) | Bundled and inlined |
 | d3 7.9.0, topojson-client 3.1.0 | npm | ISC | Bundled and inlined |
 | Router geolocation | [geolocation-db.com](https://geolocation-db.com) | Their terms | Queried over HTTPS for public hop IPs only, cached locally |
+| Network (ASN) lookup | [RIPEstat](https://stat.ripe.net) prefix-overview API | RIPE NCC terms of use | Queried over HTTPS for public hop IPs only, cached locally |
 
 See `tracemap/assets/THIRD_PARTY.md`. Because the TeleGeography data is non-commercial, do not use
 maps generated from it in commercial products without checking their terms.
@@ -275,6 +310,8 @@ maps generated from it in commercial products without checking their terms.
 - **Only public hop addresses** are sent to the geolocation API. Private (RFC 1918), carrier-grade
   NAT, loopback, link-local and documentation addresses are never sent.
 - `--offline` with `--geo-file` sends **nothing** anywhere and downloads nothing.
+- **ASN lookups** send public hop addresses to RIPEstat. `--no-asn` or `--offline` sends nothing; `--asn-file`
+  answers offline.
 - Results are cached at `~/.cache/tracemap/`. `--no-cache` disables the geolocation cache.
 - **Reverse DNS:** hostname hints need a PTR lookup per public hop, sent to your normal DNS resolver
   (the same thing `traceroute` does when you leave off `-n`). `--no-rdns` or `--offline` turns it off.
@@ -299,11 +336,13 @@ tracemap/
   cables.py              cable data loading (download, validate, cache), graph, Dijkstra routing
   sanity.py              physical RTT-versus-distance checks on hop locations
   hints.py               router hostname to city hints, reverse DNS
+  asn.py                 which network (AS) owns each hop: RIPEstat, cache, --asn-file
+  latency.py             per-leg latency chart and verdicts
   mapviz.py              builds the map data, renders the offline map, leg table, per-hop notes
   report.py, report_css.py   the HTML report
   plot.py                optional static matplotlib/basemap map
   assets/                map.html/.css/.js, d3, topojson, world atlas, illustrative cables
-samples/                 synthetic traceroute and geolocation (RFC 5737 addresses)
+samples/                 synthetic traceroute, geolocation and ASN data (RFC 5737 addresses, RFC 5398 AS numbers)
 tools/make_illustrative.py   generates the illustrative corridors
 tools/make_city_codes.py     generates assets/city_codes.json (airport and city codes)
 tests/                   pytest suite
@@ -317,7 +356,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-The suite covers the parser (Linux, macOS, Windows layouts), target validation, geolocation and
+The suite covers the parser, ASN and network colouring, branch merging, latency verdicts (Linux, macOS, Windows layouts), target validation, geolocation and
 caching, cable routing, map data, HTML escaping and placeholder injection, and the CLI end to end.
 Browser behaviour was checked manually with headless Chromium screenshots.
 
@@ -325,7 +364,8 @@ Regenerate the example output (synthetic data only, never a real trace):
 
 ```
 ./vis_route.py --input samples/traceroute_sample.txt --geo-file samples/geo_sample.json \
-    --offline --no-cache --origin 12.97,77.59 --cables illustrative -o example_output
+    --asn-file samples/asn_sample.json --offline --no-cache --origin 12.97,77.59 \
+    --cables illustrative -o example_output
 ```
 
 ## Limits
@@ -345,8 +385,9 @@ Regenerate the example output (synthetic data only, never a real trace):
 - **Phase 1, trustworthy: done.** Robust cable download with validation, atomic cache and clear
   fallback notes; physically impossible RTT detection; hostname location hints; `tracemap <host> --open`.
   Still to do on your machine: confirm the live TeleGeography download against the real service.
-- **Phase 2, richer analysis:** ASN and operator per hop with the path coloured by network, multi-probe
-  discovery of load-balanced branches, latency-per-leg chart.
+- **Phase 2, richer analysis: done.** ASN and operator per hop with the path coloured by network and
+  handoffs, load-balanced branches (`--probes`, `--runs`, merged inputs), latency-per-leg chart with
+  asymmetric-return hints. The live RIPEstat lookup is untested here; try it once on your machine.
 - **Phase 3, history:** saved runs, route diffing, timeline replay, comparing destinations, scheduled
   traces with change alerts.
 - **Phase 4, sharing:** privacy mode, GIF/video export, live streaming of hops, IPv6, web UI, Docker.

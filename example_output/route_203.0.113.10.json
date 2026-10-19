@@ -19,6 +19,8 @@
             1.337
           ],
           "location": null,
+          "asn": null,
+          "network": "Your network",
           "location_source": null,
           "location_note": null,
           "lat": null,
@@ -41,6 +43,8 @@
             3.871
           ],
           "location": null,
+          "asn": null,
+          "network": "Your ISP (carrier-grade NAT)",
           "location_source": null,
           "location_note": null,
           "lat": null,
@@ -63,6 +67,8 @@
             6.12
           ],
           "location": "Bengaluru, India",
+          "asn": 64496,
+          "network": "Example Broadband (sample ISP)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 12.9716,
@@ -85,6 +91,8 @@
             12.402
           ],
           "location": "Chennai, India",
+          "asn": 64496,
+          "network": "Example Broadband (sample ISP)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 13.0827,
@@ -113,6 +121,8 @@
             29.215
           ],
           "location": "Mumbai, India",
+          "asn": 64497,
+          "network": "Example Transit West (sample)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 19.076,
@@ -135,6 +145,8 @@
             31.39
           ],
           "location": "Mumbai, India",
+          "asn": 64497,
+          "network": "Example Transit West (sample)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 19.076,
@@ -157,6 +169,8 @@
             121.69
           ],
           "location": "Frankfurt, Germany",
+          "asn": 64498,
+          "network": "Example Global Backbone (sample)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 50.1109,
@@ -179,6 +193,8 @@
             128.662
           ],
           "location": "London, United Kingdom",
+          "asn": 64498,
+          "network": "Example Global Backbone (sample)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 51.5074,
@@ -200,6 +216,8 @@
             198.411
           ],
           "location": "New York, United States",
+          "asn": 64499,
+          "network": "Example Atlantic Carrier (sample)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 40.7128,
@@ -212,11 +230,13 @@
           "rtts_ms": [
             199.143
           ],
-          "location": "New York, United States",
+          "location": "Boston, United States",
+          "asn": 64499,
+          "network": "Example Atlantic Carrier (sample)",
           "location_source": "ip-database",
           "location_note": null,
-          "lat": 40.7128,
-          "lon": -74.006
+          "lat": 42.3601,
+          "lon": -71.0589
         }
       ]
     },
@@ -235,6 +255,8 @@
             214.812
           ],
           "location": "Ashburn, United States",
+          "asn": 64500,
+          "network": "Example Content Network (sample)",
           "location_source": "ip-database",
           "location_note": null,
           "lat": 39.0438,
