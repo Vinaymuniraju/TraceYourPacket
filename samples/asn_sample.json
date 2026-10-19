@@ -1,0 +1,10 @@
+{
+  "_comment": "Synthetic. AS numbers 64496-64511 are reserved for documentation (RFC 5398); names are invented.",
+  "198.51.100.0/27":  {"asn": 64496, "name": "Example Broadband (sample ISP)"},
+  "198.51.100.5/32":  {"asn": 64496, "name": "Example Broadband (sample ISP)"},
+  "198.51.100.8/29":  {"asn": 64497, "name": "Example Transit West (sample)"},
+  "198.51.100.13/32": {"asn": 64497, "name": "Example Transit West (sample)"},
+  "192.0.2.0/29":     {"asn": 64498, "name": "Example Global Backbone (sample)"},
+  "192.0.2.8/29":     {"asn": 64499, "name": "Example Atlantic Carrier (sample)"},
+  "203.0.113.0/24":   {"asn": 64500, "name": "Example Content Network (sample)"}
+}
