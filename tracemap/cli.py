@@ -72,6 +72,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-map", action="store_true", help="skip the interactive cable map")
     p.add_argument("--no-report", action="store_true", help="skip the HTML packet-path report")
     p.add_argument("--show", action="store_true", help="open an interactive map window")
+    p.add_argument("--history-dir", type=Path, metavar="DIR",
+                   help="where saved runs live (default ~/.local/share/tracemap/history)")
+    p.add_argument("--no-save", action="store_true", help="do not save this run to the history")
+    p.add_argument("--history", action="store_true",
+                   help="list saved runs (for the target, or all) and exit")
+    p.add_argument("--from-run", type=Path, metavar="FILE",
+                   help="rebuild the report from a saved run file instead of tracing again")
+    p.add_argument("--run-time", metavar="UTC",
+                   help="timestamp to record for this run, like 2026-10-19T16:30:00Z (default now)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
@@ -83,79 +92,96 @@ def main(argv: Optional[list[str]] = None) -> int:
         format="%(levelname)s: %(message)s",
     )
 
-    # 1. Get the raw traceroute text.
-    texts: list[str] = []
-    if args.input:
+    from .analysis import Options, analyse
+    from .snapshot import (SnapshotError, default_history_dir, list_runs, load_snapshot,
+                           save_snapshot)
+
+    hist_dir = args.history_dir or default_history_dir()
+    if args.history:
+        runs = list_runs(hist_dir, args.target)
+        if not runs:
+            print(f"no saved runs in {hist_dir}")
+            return 0
+        for tgt, path in runs:
+            print(f"{tgt:30} {path.stem}  {path}")
+        return 0
+
+    if args.run_time and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", args.run_time):
+        print("error: --run-time must look like 2026-10-19T16:30:00Z", file=sys.stderr)
+        return 2
+
+    opts = Options(offline=args.offline, no_cache=args.no_cache, geo_file=args.geo_file,
+                   asn_file=args.asn_file, no_asn=args.no_asn, no_rdns=args.no_rdns)
+
+    if args.from_run:
         try:
-            texts = [f.read_text() for f in args.input]
-        except OSError as exc:
-            print(f"error: cannot read input: {exc}", file=sys.stderr)
+            an = load_snapshot(args.from_run)
+        except SnapshotError as exc:
+            print(f"error: {exc}", file=sys.stderr)
             return 2
+        if args.origin:
+            an.origin = args.origin
+        trace, method = an.trace, an.method
+        print(f"loaded: {args.from_run} (taken {an.taken_at})")
     else:
-        if not args.target:
-            print("error: give a target or --input FILE", file=sys.stderr)
-            return 2
-        try:
-            name, ip = validate_target(args.target)
-            if not 1 <= args.runs <= 5:
-                raise ValueError("runs must be between 1 and 5")
-            cmd = build_command(ip, args.method or "udp", args.max_hops, probes=args.probes)
-        except (TargetError, ValueError, RuntimeError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-        print(f"$ {' '.join(cmd)}")
-        try:
-            for n in range(args.runs):
-                if args.runs > 1:
-                    print(f"run {n + 1} of {args.runs}")
-                texts.append(run_traceroute(cmd, timeout=args.timeout))
-        except RuntimeError as exc:
-            print(f"error: {exc}", file=sys.stderr)
+        # 1. Get the raw traceroute text.
+        texts: list[str] = []
+        if args.input:
+            try:
+                texts = [f.read_text() for f in args.input]
+            except OSError as exc:
+                print(f"error: cannot read input: {exc}", file=sys.stderr)
+                return 2
+        else:
+            if not args.target:
+                print("error: give a target, --input FILE or --from-run FILE", file=sys.stderr)
+                return 2
+            try:
+                name, ip = validate_target(args.target)
+                if not 1 <= args.runs <= 5:
+                    raise ValueError("runs must be between 1 and 5")
+                cmd = build_command(ip, args.method or "udp", args.max_hops, probes=args.probes)
+            except (TargetError, ValueError, RuntimeError) as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            print(f"$ {' '.join(cmd)}")
+            try:
+                for n in range(args.runs):
+                    if args.runs > 1:
+                        print(f"run {n + 1} of {args.runs}")
+                    texts.append(run_traceroute(cmd, timeout=args.timeout))
+            except RuntimeError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+
+        # 2. Parse it.
+        traces = [parse_traceroute(t) for t in texts]
+        trace = merge_traces(traces) if len(traces) > 1 else traces[0]
+        if not args.input:
+            trace.target = trace.target or name
+            trace.target_ip = trace.target_ip or ip
+        elif args.target:
+            trace.target = args.target
+        if not trace.hops:
+            print("error: no hops found in the traceroute output", file=sys.stderr)
             return 1
+        method = args.method or ("icmp" if trace.style == "windows" else "udp")
 
-    # 2. Parse it.
-    traces = [parse_traceroute(t) for t in texts]
-    trace = merge_traces(traces) if len(traces) > 1 else traces[0]
-    if not args.input:
-        trace.target = trace.target or name
-        trace.target_ip = trace.target_ip or ip
-    if not trace.hops:
-        print("error: no hops found in the traceroute output", file=sys.stderr)
-        return 1
-    method = args.method or ("icmp" if trace.style == "windows" else "udp")
+        # 3. Locations, networks, hostname hints and sanity checks.
+        an = analyse(trace, method, args.origin, opts, taken_at=args.run_time)
+        for msg in an.hint_messages:
+            print(f"hint:   {msg}", file=sys.stderr)
 
-    # 3. Geolocate public hops.
-    resolver = GeoResolver(
-        geo_file=args.geo_file,
-        use_network=not args.offline,
-        cache_path=None if args.no_cache else default_cache_path(),
-    )
-    geo = {}
-    for hop in trace.hops:
-        for r in hop.responders:
-            if r.ip not in geo:
-                geo[r.ip] = resolver.lookup(r.ip)
-    resolver.save()
-
-    # Which network owns each hop (RIPEstat, cache, or --asn-file).
-    asn_map = {}
-    if not args.no_asn:
-        from .asn import AsnResolver, default_cache_path as asn_cache
-
-        ar = AsnResolver(asn_file=args.asn_file, use_network=not args.offline,
-                         cache_path=None if args.no_cache else asn_cache())
-        asn_map = {ip: v for ip, v in ar.lookup_many(
-            [r.ip for hop in trace.hops for r in hop.responders]).items() if v}
-        ar.save()
-
-    # Router hostnames (airport and city codes) can check or correct the IP-database locations.
-    from .hints import apply_hints, reverse_dns
-
-    names = {} if (args.offline or args.no_rdns) else reverse_dns(
-        [r.ip for hop in trace.hops for r in hop.responders])
-    for msg in apply_hints(trace, geo, args.origin, names):
-        print(f"hint:   {msg}", file=sys.stderr)
+    geo, asn_map, names = an.geo, an.asn, an.names
     located = [(h, geo[h.ip]) for h in trace.hops if h.ip and geo.get(h.ip)]
+
+    saved_path = None
+    if not args.no_save and not args.from_run:
+        try:
+            saved_path = save_snapshot(an, hist_dir)
+            print(f"saved:  {saved_path}")
+        except OSError as exc:
+            print(f"note:   could not save the run: {exc}", file=sys.stderr)
 
     # 4. Outputs.
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", trace.target or "route")
@@ -197,8 +223,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"data:   {js}")
 
     map_doc, cable_html, hop_notes = None, "", None
-    from .sanity import check_hops
-    findings = check_hops(trace, geo, args.origin)
+    findings = an.findings
     for i, f in sorted(findings.items()):
         print(f"warn:   hop {trace.hops[i].ttl} ({trace.hops[i].ip}): {f.message()}", file=sys.stderr)
     if not args.no_map and args.cables != "none":
@@ -213,7 +238,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 1
         if cs.note:
             print(f"note:   {cs.note}", file=sys.stderr)
-        mdata = build_map_data(trace, geo, method, cs, args.origin, asn=asn_map)
+        mdata = build_map_data(trace, geo, method, cs, an.origin, asn=asn_map)
         if mdata:
             map_doc = render_map(mdata)
             from .latency import latency_section_html
@@ -238,7 +263,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 if args.png:
                     return 1
             if plot_route:
-                plot_route(located, png, show=args.show, origin=args.origin,
+                plot_route(located, png, show=args.show, origin=an.origin,
                            title=f"Route to {trace.target} ({trace.target_ip})")
                 print(f"map:    {png}")
         else:
@@ -250,7 +275,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         png_b64 = base64.b64encode(png.read_bytes()).decode() if (located and png.exists() and not map_doc) else None
         html = args.outdir / f"route_{safe}.html"
-        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html, hop_notes, findings, asn_map), encoding="utf-8")
+        html.write_text(render_report(trace, geo, method, png_b64, an.origin, map_doc, cable_html, hop_notes, findings, asn_map), encoding="utf-8")
         print(f"report: {html}")
         if args.open:
             import webbrowser
