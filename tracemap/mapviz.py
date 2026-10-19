@@ -213,7 +213,8 @@ def cable_section_html(data: dict) -> str:
     pct = (100.0 * stt["cableKm"] / stt["totalKm"]) if stt["totalKm"] else 0
     return (
         "<h2>Cable path, leg by leg</h2>"
-        "<style>.stats>div>b,.stats>div>span{display:block}</style><div class='stats'>"
+        "<style>.stats>div>b,.stats>div>span{{display:block}}</style>"
+        "<div class='stats'>"
         "<div><b>{:,.0f} km</b><span>total path</span></div>"
         "<div><b>{:,.0f} km</b><span>on submarine cable ({:.0f}%)</span></div>"
         "<div><b>{:,.0f} km</b><span>overland estimate</span></div>"
