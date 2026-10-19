@@ -10,6 +10,7 @@ from .cables import ASSETS, CableGraph, CableSet, decimate, hav_km, route_statio
 from .geo import GeoInfo, classify_ip
 from .parser import Trace
 from .report import METHODS, _role
+from .sanity import check_hops
 
 
 _PORTS = {"udp": "dst port 33434+", "icmp": "", "tcp": "dst port 80"}
@@ -53,6 +54,7 @@ def build_map_data(
         first = next(geo[h.ip] for h in trace.hops if h.ip and geo.get(h.ip))
         stations.append({"lat": first.lat, "lon": first.lon, "label": first.label})
 
+    findings = check_hops(trace, geo, origin)
     hops_out = []
     for idx, h in enumerate(trace.hops):
         g = geo.get(h.ip) if h.ip else None
@@ -80,6 +82,8 @@ def build_map_data(
             "station": station,
             "located": bool(g),
             "label": g.label if g else "",
+            "check": ({"level": findings[idx].level, "msg": findings[idx].message()}
+                      if idx in findings else None),
         })
 
     if graph is None:
@@ -129,6 +133,7 @@ def build_map_data(
         "hops": hops_out,
         "legs": legs_out,
         "usedCables": used,
+        "warnings": len(findings),
         "cables": {
             "features": features,
             "landings": list(landings.values())[:5000],

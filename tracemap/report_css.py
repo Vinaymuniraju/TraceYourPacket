@@ -89,4 +89,7 @@ footer{margin-top:40px;color:var(--muted);font-size:13px}
 .cablenote{margin:6px 0;padding:6px 8px;border-radius:6px;background:rgba(34,211,238,.10);
   border-left:3px solid #22d3ee;font-size:13px}
 @media(max-width:700px){.mapwrap{position:static}}
+.locwarn{margin:6px 0;padding:6px 8px;border-radius:6px;background:rgba(255,209,102,.16);
+  border-left:3px solid #e0a800;font-size:13px}
+.locwarn.impossible{background:rgba(255,93,122,.14);border-left-color:#e0364f}
 """

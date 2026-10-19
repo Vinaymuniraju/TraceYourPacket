@@ -471,6 +471,10 @@ const rows = hops.map((h, i) => {
   const mid = el('div');
   mid.appendChild(el('div', 'ip mono', h.ip || '* * *'));
   mid.appendChild(el('div', 'loc', h.located ? h.label : (h.ip ? h.cls : 'no reply')));
+  if (h.check) {
+    const w = el('div', 'wchk ' + h.check.level, (h.check.level === 'impossible' ? 'Location impossible' : 'Location doubtful') + ': RTT too low for the distance');
+    w.title = h.check.msg; mid.appendChild(w);
+  }
   r.appendChild(mid);
   r.appendChild(el('span', 'rt mono', h.rtt ? fmt(h.rtt.avg) + ' ms' : '-'));
   const bar = el('div', 'bar'); const fill = el('i'); fill.style.width = (h.rtt ? Math.max(2, 100 * h.rtt.avg / maxRtt) : 0) + '%';
@@ -512,6 +516,7 @@ chip(Math.round(D.stats.totalKm).toLocaleString() + ' km', 'path');
 chip(Math.round(D.stats.cableKm).toLocaleString() + ' km', 'on cables', D.stats.cableKm ? 'good' : '');
 if (D.stats.rttMs != null) chip(fmt(D.stats.rttMs, 0) + ' ms', 'observed RTT');
 if (D.stats.floorMs) chip(fmt(D.stats.floorMs, 0) + ' ms', 'fibre floor');
+if (D.warnings) chip(String(D.warnings), D.warnings === 1 ? 'doubtful location' : 'doubtful locations', 'warn');
 if (!D.cables.real) chip('illustrative cables', '', 'warn');
 else if (D.cables.note) chip('cached cable data', '', 'warn');
 tc.appendChild(chips);

@@ -150,6 +150,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"data:   {js}")
 
     map_doc, cable_html, hop_notes = None, "", None
+    from .sanity import check_hops
+    findings = check_hops(trace, geo, args.origin)
+    for i, f in sorted(findings.items()):
+        print(f"warn:   hop {trace.hops[i].ttl} ({trace.hops[i].ip}): {f.message()}", file=sys.stderr)
     if not args.no_map and args.cables != "none":
         from .cables import CableDataError, load_cables
         from .mapviz import build_map_data, cable_section_html, hop_cable_notes, render_map
@@ -189,7 +193,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         png_b64 = base64.b64encode(png.read_bytes()).decode() if (located and png.exists() and not map_doc) else None
         html = args.outdir / f"route_{safe}.html"
-        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html, hop_notes), encoding="utf-8")
+        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html, hop_notes, findings), encoding="utf-8")
         print(f"report: {html}")
 
     print(f"{len(trace.hops)} hops, destination {'reached' if trace.reached else 'not reached'}")

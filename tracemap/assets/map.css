@@ -128,3 +128,7 @@ select.b{padding-right:6px;color-scheme:dark}
 @media (prefers-reduced-motion:reduce){
   .rt-top,.mk.active .halo{animation:none}
 }
+
+.wchk{margin-top:2px;font-size:11.5px;color:var(--land);cursor:help}
+.wchk.impossible{color:var(--drop)}
+.wchk::before{content:'\26A0  '}
