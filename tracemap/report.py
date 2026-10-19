@@ -457,6 +457,8 @@ def render_report(
     method: str,
     map_png_b64: Optional[str],
     origin: Optional[tuple[float, float]] = None,
+    map_doc: Optional[str] = None,
+    cable_html: str = "",
 ) -> str:
     method = method if method in METHODS else "udp"
     hops = trace.hops
@@ -517,7 +519,15 @@ def render_report(
         f"probe type {esc(m['name'])} · destination "
         f"{'reached' if trace.reached else 'not reached'}</p>",
         f"<div class='stats'>{stat_html}</div>",
-        "<h2>Route on the map</h2>", map_html,
+        "<h2>Route on the map</h2>",
+        (
+            "<iframe class='cablemap' title='Interactive submarine cable map' loading='lazy' "
+            "sandbox='allow-scripts' style='width:100%;height:78vh;min-height:560px;border:1px solid "
+            "var(--line,#334);border-radius:12px;background:#050912' srcdoc=\""
+            + esc(map_doc) + "\"></iframe>"
+            if map_doc else ""
+        ),
+        map_html, cable_html,
         "<h2>How the packets travelled</h2>",
         "<p>Each row is one probe. It leaves your computer with a TTL that equals the row's number. "
         "The circle on every router it crosses shows the TTL left after that router subtracted 1. "

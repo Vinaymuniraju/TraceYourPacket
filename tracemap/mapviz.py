@@ -170,3 +170,67 @@ def render_map(data: dict) -> str:
     }
     # One pass over the template: inserted text is never scanned for placeholders again.
     return re.sub(r"__(TITLE|CSS|DATA|WORLD|D3|TOPO|JS)__", lambda m: repl[m.group(1)], tpl)
+
+
+def cable_section_html(data: dict) -> str:
+    """Leg-by-leg cable table for the report (all text escaped)."""
+    st, hops, legs = data["stations"], data["hops"], data["legs"]
+    # best observed RTT per station (last hop that sits at that station)
+    rtt_at: dict[int, float] = {}
+    ttl_at: dict[int, list[int]] = {}
+    for h in hops:
+        ttl_at.setdefault(h["station"], []).append(h["ttl"])
+        if h["rtt"]:
+            rtt_at[h["station"]] = h["rtt"]["avg"]
+    rows = []
+    prev = None
+    for i, leg in enumerate(legs):
+        a, b = st[i], st[i + 1]
+        floor = leg["km"] / 100.0  # round trip over fibre ~ 2 * km / 200 km per ms
+        ra, rb = rtt_at.get(i), rtt_at.get(i + 1)
+        delta = f"{rb - ra:+.1f} ms" if ra is not None and rb is not None else "-"
+        kinds = []
+        for sg in leg["segments"]:
+            kinds.append("cable: " + (sg["name"] or "unnamed") if sg["kind"] == "cable"
+                         else "overland link (straight-line estimate)")
+        ttls = ttl_at.get(i + 1, [])
+        rows.append(
+            "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+            % (i + 1, escape(a["label"]), escape(b["label"]),
+               ", ".join("TTL %s" % t for t in ttls) or "-",
+               "{:,.0f} km".format(leg["km"]),
+               "{:,.0f} km".format(leg["cableKm"]),
+               escape("; ".join(kinds) or "direct"),
+               "%s / %.1f ms" % (delta, floor))
+        )
+    stt = data["stats"]
+    used = ", ".join(escape(n) for n in data["usedCables"]) or "none"
+    src = escape(data["cables"]["source"])
+    note = (
+        "Cable names are illustrative corridors, not real systems." if not data["cables"]["real"]
+        else "Cable geometry from " + escape(data["cables"]["attribution"])
+    )
+    pct = (100.0 * stt["cableKm"] / stt["totalKm"]) if stt["totalKm"] else 0
+    return (
+        "<h2>Cable path, leg by leg</h2>"
+        "<style>.stats>div>b,.stats>div>span{display:block}</style><div class='stats'>"
+        "<div><b>{:,.0f} km</b><span>total path</span></div>"
+        "<div><b>{:,.0f} km</b><span>on submarine cable ({:.0f}%)</span></div>"
+        "<div><b>{:,.0f} km</b><span>overland estimate</span></div>"
+        "<div><b>{}</b><span>fibre RTT floor</span></div>"
+        "<div><b>{}</b><span>observed RTT</span></div></div>".format(
+            stt["totalKm"], stt["cableKm"], pct, stt["landKm"],
+            "-" if stt["floorMs"] is None else "%.0f ms" % stt["floorMs"],
+            "-" if stt["rttMs"] is None else "%.0f ms" % stt["rttMs"])
+        + "<div class='scroll'><table class='hops'><thead><tr><th>Leg</th><th>From</th><th>To</th>"
+          "<th>Hops arriving</th><th>Length</th><th>On cable</th><th>Carried by</th>"
+          "<th>RTT step / floor</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
+        "<p><b>Cables on this route:</b> " + used + "</p>"
+        "<p class='muted'>How to read this. Traceroute reports routers, not cables, so the carrier of each "
+        "leg is inferred: the shortest path over a graph of cable landing points, with straight-line "
+        "overland links where no cable is near. Length is great-circle or along the drawn cable. "
+        "The floor is the round-trip time light needs in fibre (about 200 km per ms one way); the "
+        "observed step should be at or above it, and a step far above it points to queueing, detours "
+        "or a longer real route. A hop whose location came from an IP database may sit at the "
+        "operator's head office, not at the router. Cable data: " + src + ". " + note + "</p>"
+    )

@@ -153,26 +153,29 @@ def main(argv: Optional[list[str]] = None) -> int:
     js.write_text(json.dumps(data, indent=2))
     print(f"data:   {js}")
 
+    map_doc, cable_html = None, ""
+    if not args.no_map and args.cables != "none":
+        from .cables import load_cables
+        from .mapviz import build_map_data, cable_section_html, render_map
+
+        cs = load_cables(args.cables, args.cables_file, offline=args.offline)
+        mdata = build_map_data(trace, geo, method, cs, args.origin)
+        if mdata:
+            map_doc = render_map(mdata)
+            cable_html = cable_section_html(mdata)
+            mp = args.outdir / f"route_{safe}_map.html"
+            mp.write_text(map_doc, encoding="utf-8")
+            print(f"map:    {mp}  (cables: {cs.source})")
+        else:
+            print("map:    skipped (no hop could be located)")
+
     if not args.no_report:
         from .report import render_report
 
         png_b64 = base64.b64encode(png.read_bytes()).decode() if located else None
         html = args.outdir / f"route_{safe}.html"
-        html.write_text(render_report(trace, geo, method, png_b64, args.origin), encoding="utf-8")
+        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html), encoding="utf-8")
         print(f"report: {html}")
-
-    if not args.no_map and args.cables != "none":
-        from .cables import load_cables
-        from .mapviz import build_map_data, render_map
-
-        cs = load_cables(args.cables, args.cables_file, offline=args.offline)
-        mdata = build_map_data(trace, geo, method, cs, args.origin)
-        if mdata:
-            mp = args.outdir / f"route_{safe}_map.html"
-            mp.write_text(render_map(mdata), encoding="utf-8")
-            print(f"map:    {mp}  (cables: {cs.source})")
-        else:
-            print("map:    skipped (no hop could be located)")
 
     print(f"{len(trace.hops)} hops, destination {'reached' if trace.reached else 'not reached'}")
     return 0
