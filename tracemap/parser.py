@@ -190,3 +190,38 @@ def parse_traceroute(text: str) -> Trace:
             if any(k in ("ip", "rtt") for k, _ in toks):
                 _apply(trace.hops[-1], toks)
     return trace
+
+
+def merge_traces(traces: list[Trace]) -> Trace:
+    """Combine several runs of the same trace into one.
+
+    For every TTL, the responders from all runs are united and their RTTs pooled. Responders are
+    ordered by how many probes they answered, so the most common router is the main one and the
+    rest are the alternative branches of a load-balanced path. Lost probes are summed.
+    """
+    if not traces:
+        raise ValueError("nothing to merge")
+    first = traces[0]
+    out = Trace(first.target, first.target_ip, first.max_hops, first.packet_size, first.style, [])
+    for t in traces[1:]:
+        out.target = out.target or t.target
+        out.target_ip = out.target_ip or t.target_ip
+    for ttl in sorted({h.ttl for t in traces for h in t.hops}):
+        merged = Hop(ttl)
+        for t in traces:
+            for h in t.hops:
+                if h.ttl != ttl:
+                    continue
+                merged.lost += h.lost
+                for f in h.flags:
+                    if f not in merged.flags:
+                        merged.flags.append(f)
+                for r in h.responders:
+                    m = merged.responder(r.ip)
+                    m.rtts.extend(r.rtts)
+                    m.hostname = m.hostname or r.hostname
+        merged.responders.sort(key=lambda r: -len(r.rtts))   # stable: ties keep first-seen order
+        out.hops.append(merged)
+    # A run that stopped early leaves trailing hops only some runs saw; keep through the last one
+    # that any run reached, which is what the loop above already does.
+    return out

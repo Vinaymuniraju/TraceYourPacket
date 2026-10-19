@@ -47,17 +47,22 @@ def validate_target(target: str) -> tuple[str, str]:
 
 
 def build_command(
-    ip: str, method: str = "udp", max_hops: int = 25, system: Optional[str] = None
+    ip: str, method: str = "udp", max_hops: int = 25, system: Optional[str] = None,
+    probes: int = 3,
 ) -> list[str]:
     """Build the argv list for the platform's traceroute tool."""
     system = system or platform.system()
     if not 1 <= max_hops <= 64:
         raise ValueError("max_hops must be between 1 and 64")
+    if not 1 <= probes <= 10:
+        raise ValueError("probes must be between 1 and 10")
     if system == "Windows":
         # tracert always sends ICMP echo requests.
         return ["tracert", "-d", "-h", str(max_hops), "-4", ip]
     if system in ("Linux", "Darwin"):
         cmd = ["traceroute", "-n", "-m", str(max_hops)]
+        if probes != 3:
+            cmd += ["-q", str(probes)]
         if method == "icmp":
             cmd += ["-I"] if system == "Linux" else ["-P", "ICMP"]
         elif method == "tcp":

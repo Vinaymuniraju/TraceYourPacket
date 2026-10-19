@@ -191,10 +191,16 @@ def _hop_notes(trace: Trace, idx: int, geo: dict, method: str) -> list[str]:
         notes.append("Hop 1 is the next device on your local link. Your computer sends probes "
                      "to its MAC address after an ARP lookup.")
     if len(hop.responders) > 1:
-        ips = ", ".join(r.ip for r in hop.responders)
-        notes.append(f"Several addresses answered for this TTL ({esc(ips)}). That points to "
-                     "load balancing across equal-cost paths: the router hashes the packet "
-                     "headers, and the probes took different routes.")
+        total = sum(len(r.rtts) for r in hop.responders) + hop.lost
+        parts = []
+        for r in hop.responders:
+            g = geo.get(r.ip)
+            parts.append(f"<span class='mono'>{esc(r.ip)}</span>"
+                         f"{' (' + esc(g.label) + ')' if g else ''}: {len(r.rtts)} of {total} probes")
+        notes.append("<b>Load balancing:</b> " + str(len(hop.responders)) + " different routers answered this "
+                     "TTL: " + "; ".join(parts) + ". The router before this hop splits traffic across "
+                     "equal-cost paths by hashing packet headers, so the probes took different routes. "
+                     "The map shows the main router on the path and the others as branches.")
     if hop.lost:
         notes.append(f"{hop.lost} of the probes for this TTL got no answer (loss or rate limiting).")
     if hop.flags:

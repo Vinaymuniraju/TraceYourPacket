@@ -7,6 +7,6 @@
   "192.0.2.1":     {"latitude": 50.1109, "longitude": 8.6821,  "city": "Frankfurt", "country_name": "Germany"},
   "192.0.2.5":     {"latitude": 51.5074, "longitude": -0.1278, "city": "London", "country_name": "United Kingdom"},
   "192.0.2.9":     {"latitude": 40.7128, "longitude": -74.0060, "city": "New York", "country_name": "United States"},
-  "192.0.2.13":    {"latitude": 40.7128, "longitude": -74.0060, "city": "New York", "country_name": "United States"},
+  "192.0.2.13":    {"latitude": 42.3601, "longitude": -71.0589, "city": "Boston", "country_name": "United States"},
   "203.0.113.10":  {"latitude": 39.0438, "longitude": -77.4874, "city": "Ashburn", "country_name": "United States"}
 }

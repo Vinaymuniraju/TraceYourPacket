@@ -120,7 +120,7 @@ function applyNetColors() {
     this.classList.toggle('net', !!on);
   });
 }
-const layers = { networks: true, cables: true, borders: true, grat: true, landings: true, labels: true };
+const layers = { branches: true, networks: true, cables: true, borders: true, grat: true, landings: true, labels: true };
 
 function layout() {
   const r = $('#stage').getBoundingClientRect();
@@ -191,6 +191,36 @@ const markers = stations.map((s, i) => {
   return g;
 });
 
+/* load-balanced branches: other routers that answered the same TTL */
+const branches = [];
+hops.forEach((h, hi) => (h.alts || []).forEach((a) => {
+  const g = gMarkers.append('g').attr('class', 'br');
+  const line = g.append('line').attr('class', 'br-line');
+  const dot = g.append('circle').attr('class', 'br-dot').attr('r', 5);
+  const lbl = g.append('text').attr('class', 'br-lbl').attr('x', 8).attr('y', 3).text('TTL ' + h.ttl + ' alt');
+  const color = netColor(a.net || h.net);
+  line.style('stroke', color); dot.style('stroke', color);
+  const share = `${a.probes} of ${h.probesTotal} probes`;
+  g.on('mouseenter', (e) => {
+    fillTip('Alternative router, TTL ' + h.ttl, [a.ip, a.label, a.asnLabel, share + ' went this way'].filter(Boolean));
+    tip.hidden = false; moveTip(e);
+  }).on('mousemove', moveTip).on('mouseleave', hideTip);
+  branches.push({ g, line, a, h });
+}));
+function placeBranches() {
+  branches.forEach(({ g, line, a, h }) => {
+    const base = markers[h.station].attr('transform');
+    const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(base || '');
+    const show = layers.branches && a.far && m;
+    g.style('display', show ? null : 'none');
+    g.select('.br-lbl').style('display', T.k >= 3 ? null : 'none');
+    if (!show) return;
+    const q = T.apply(projection([a.lon, a.lat]));
+    g.attr('transform', `translate(${q[0]},${q[1]})`);
+    line.attr('x1', 0).attr('y1', 0).attr('x2', +m[1] - q[0]).attr('y2', +m[2] - q[1]);
+  });
+}
+
 function placeMarkers() {
   const placed = [];
   markers.forEach((g, i) => {
@@ -204,6 +234,7 @@ function placeMarkers() {
     const show = layers.labels && g.classed('active') || (layers.labels && !crowded && (important || T.k >= 2.4));
     g.select('.lbl').style('display', show ? null : 'none');
   });
+  placeBranches();
 }
 function onZoom() {
   placeMarkers();
@@ -464,9 +495,9 @@ const c2 = el('div', 'ctrl'); [bProbe, bFlow].forEach((b) => c2.appendChild(b));
 const c3 = el('div', 'ctrl'); c3.appendChild(el('span', 'mute', 'Speed')); c3.appendChild(spd); c3.appendChild(bFit); c3.appendChild(bWorld);
 
 const tg = el('div', 'toggles');
-[...((D.nets || []).length ? [['networks', 'Networks']] : []), ['cables', 'Cables'], ['landings', 'Landings'], ['borders', 'Borders'], ['grat', 'Grid'], ['labels', 'Labels']].forEach(([k, t]) => {
+[...((D.nets || []).length ? [['networks', 'Networks']] : []), ...((D.branches || 0) ? [['branches', 'Branches']] : []), ['cables', 'Cables'], ['landings', 'Landings'], ['borders', 'Borders'], ['grat', 'Grid'], ['labels', 'Labels']].forEach(([k, t]) => {
   const l = el('label'); const c = el('input'); c.type = 'checkbox'; c.checked = true;
-  c.addEventListener('change', () => { layers[k] = c.checked; applyLayerVisibility(); applyNetColors(); });
+  c.addEventListener('change', () => { layers[k] = c.checked; applyLayerVisibility(); applyNetColors(); placeBranches(); });
   l.appendChild(c); l.appendChild(document.createTextNode(t)); tg.appendChild(l);
 });
 
@@ -483,6 +514,11 @@ const rows = hops.map((h, i) => {
   const mid = el('div');
   mid.appendChild(el('div', 'ip mono', h.ip || '* * *'));
   mid.appendChild(el('div', 'loc', h.located ? h.label : (h.ip ? h.cls : 'no reply')));
+  if ((h.alts || []).length) {
+    const b = el('div', 'lbal', 'Load balanced: ' + (h.alts.length + 1) + ' routers');
+    b.title = [h.ip + ': ' + h.probesMain + ' of ' + h.probesTotal + ' probes'].concat(h.alts.map((a) => a.ip + (a.label ? ' (' + a.label + ')' : '') + ': ' + a.probes + ' of ' + h.probesTotal + ' probes')).join('\n');
+    mid.appendChild(b);
+  }
   if (h.asnLabel) {
     const a = el('div', 'asn'); const d = el('i'); d.style.background = netColor(h.net); a.appendChild(d);
     a.appendChild(document.createTextNode(h.asnLabel)); a.title = h.asnLabel; mid.appendChild(a);
@@ -548,6 +584,7 @@ chip(Math.round(D.stats.cableKm).toLocaleString() + ' km', 'on cables', D.stats.
 if (D.stats.rttMs != null) chip(fmt(D.stats.rttMs, 0) + ' ms', 'observed RTT');
 if (D.stats.floorMs) chip(fmt(D.stats.floorMs, 0) + ' ms', 'fibre floor');
 if ((D.nets || []).filter((n) => n.key !== 'local').length) chip(String(D.nets.filter((n) => n.key !== 'local').length), 'networks');
+if (D.branches) chip(String(D.branches), D.branches === 1 ? 'load-balanced hop' : 'load-balanced hops');
 if (D.warnings) chip(String(D.warnings), D.warnings === 1 ? 'doubtful location' : 'doubtful locations', 'warn');
 if (!D.cables.real) chip('illustrative cables', '', 'warn');
 else if (D.cables.note) chip('cached cable data', '', 'warn');

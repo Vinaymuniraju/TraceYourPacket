@@ -74,7 +74,22 @@ def build_map_data(
         cls = classify_ip(h.ip) if h.ip else "-"
         info = (asn or {}).get(h.ip) if h.ip else None
         is_dest = trace.reached and idx == len(trace.hops) - 1
+        alts = []
+        if len(h.responders) > 1:
+            total = sum(len(r.rtts) for r in h.responders) + h.lost
+            for r in h.responders[1:]:
+                ag = geo.get(r.ip)
+                ai = (asn or {}).get(r.ip)
+                far = bool(ag) and hav_km((stations[station]["lon"], stations[station]["lat"]),
+                                          (ag.lon, ag.lat)) >= 5.0
+                alts.append({"ip": r.ip, "probes": len(r.rtts), "label": ag.label if ag else "",
+                             "lat": ag.lat if (ag and far) else None, "lon": ag.lon if (ag and far) else None,
+                             "far": far, "asnLabel": ai.label if ai else None,
+                             "rtt": (sum(r.rtts) / len(r.rtts)) if r.rtts else None})
         hops_out.append({
+            "alts": alts,
+            "probesTotal": (sum(len(r.rtts) for r in h.responders) + h.lost) if h.ip else h.lost,
+            "probesMain": len(h.responders[0].rtts) if h.responders else 0,
             "ttl": h.ttl,
             "ip": h.ip,
             "cls": cls,
@@ -162,6 +177,7 @@ def build_map_data(
         "nets": nets_out,
         "handoffs": handoffs,
         "warnings": len(findings),
+        "branches": sum(1 for h in hops_out if h["alts"]),
         "cables": {
             "features": features,
             "landings": list(landings.values())[:5000],

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from .geo import GeoResolver, default_cache_path, classify_ip
-from .parser import parse_traceroute
+from .parser import merge_traces, parse_traceroute
 from .runner import TargetError, build_command, run_traceroute, validate_target
 
 
@@ -37,7 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-hops", type=int, default=25, help="maximum TTL (default 25)")
     p.add_argument("--timeout", type=float, default=300.0,
                    help="kill traceroute after this many seconds (default 300)")
-    p.add_argument("--input", type=Path, metavar="FILE",
+    p.add_argument("--probes", type=int, default=3, metavar="N",
+                   help="probes per hop on Linux/macOS, 1 to 10 (default 3). More probes reveal more "
+                        "load-balanced branches")
+    p.add_argument("--runs", type=int, default=1, metavar="N",
+                   help="run traceroute N times (1 to 5) and merge the results to find more branches")
+    p.add_argument("--input", type=Path, metavar="FILE", action="append",
                    help="parse a saved traceroute/tracert output instead of running it")
     p.add_argument("--geo-file", type=Path, metavar="JSON",
                    help="use IP -> location entries from this file first")
@@ -79,27 +84,38 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     # 1. Get the raw traceroute text.
+    texts: list[str] = []
     if args.input:
-        text = args.input.read_text()
+        try:
+            texts = [f.read_text() for f in args.input]
+        except OSError as exc:
+            print(f"error: cannot read input: {exc}", file=sys.stderr)
+            return 2
     else:
         if not args.target:
             print("error: give a target or --input FILE", file=sys.stderr)
             return 2
         try:
             name, ip = validate_target(args.target)
-            cmd = build_command(ip, args.method or "udp", args.max_hops)
+            if not 1 <= args.runs <= 5:
+                raise ValueError("runs must be between 1 and 5")
+            cmd = build_command(ip, args.method or "udp", args.max_hops, probes=args.probes)
         except (TargetError, ValueError, RuntimeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
         print(f"$ {' '.join(cmd)}")
         try:
-            text = run_traceroute(cmd, timeout=args.timeout)
+            for n in range(args.runs):
+                if args.runs > 1:
+                    print(f"run {n + 1} of {args.runs}")
+                texts.append(run_traceroute(cmd, timeout=args.timeout))
         except RuntimeError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
 
     # 2. Parse it.
-    trace = parse_traceroute(text)
+    traces = [parse_traceroute(t) for t in texts]
+    trace = merge_traces(traces) if len(traces) > 1 else traces[0]
     if not args.input:
         trace.target = trace.target or name
         trace.target_ip = trace.target_ip or ip
