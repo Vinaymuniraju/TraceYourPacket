@@ -27,7 +27,7 @@ def _origin(text: str) -> tuple[float, float]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="vis_route.py",
+        prog="tracemap",
         description="Trace the route to a host, plot it on a map and write a "
         "packet-path report.",
     )
@@ -58,6 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="do not look up router hostnames (they are used as location hints)")
     p.add_argument("--refresh-cables", action="store_true",
                    help="ignore the cached cable data and download it again")
+    p.add_argument("--open", action="store_true",
+                   help="open the finished report in your browser")
     p.add_argument("--no-map", action="store_true", help="skip the interactive cable map")
     p.add_argument("--no-report", action="store_true", help="skip the HTML packet-path report")
     p.add_argument("--show", action="store_true", help="open an interactive map window")
@@ -191,11 +193,18 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.png or not map_doc:
         if located:
-            from .plot import plot_route
-
-            plot_route(located, png, show=args.show, origin=args.origin,
-                       title=f"Route to {trace.target} ({trace.target_ip})")
-            print(f"map:    {png}")
+            try:
+                from .plot import plot_route
+            except ImportError:
+                plot_route = None
+                print('error: the static PNG needs the optional plotting packages: '
+                      'pip install "traceyourpacket[png]"', file=sys.stderr)
+                if args.png:
+                    return 1
+            if plot_route:
+                plot_route(located, png, show=args.show, origin=args.origin,
+                           title=f"Route to {trace.target} ({trace.target_ip})")
+                print(f"map:    {png}")
         else:
             print("note: no hop could be located, so no map was drawn")
 
@@ -207,6 +216,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         html = args.outdir / f"route_{safe}.html"
         html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html, hop_notes, findings), encoding="utf-8")
         print(f"report: {html}")
+        if args.open:
+            import webbrowser
+            if not webbrowser.open(html.resolve().as_uri()):
+                print("note:   could not open a browser; open the report file yourself", file=sys.stderr)
 
     print(f"{len(trace.hops)} hops, destination {'reached' if trace.reached else 'not reached'}")
     return 0

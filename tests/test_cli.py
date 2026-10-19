@@ -77,3 +77,23 @@ def test_no_png_by_default_with_map(tmp_path):
     rc = main(["--input", str(SAMPLES / "traceroute_sample.txt"), "--geo-file", str(SAMPLES / "geo_sample.json"),
                "--offline", "--no-cache", "--cables", "illustrative", "-o", str(tmp_path)])
     assert rc == 0 and not list(tmp_path.glob("*.png"))
+
+
+def test_open_flag_opens_the_report(tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url) or True)
+    rc = main(["--input", str(SAMPLES / "traceroute_sample.txt"), "--geo-file", str(SAMPLES / "geo_sample.json"),
+               "--offline", "--no-cache", "--cables", "illustrative", "--open", "-o", str(tmp_path)])
+    assert rc == 0 and len(opened) == 1
+    assert opened[0].startswith("file://") and opened[0].endswith(".html")
+
+
+def test_no_rdns_and_offline_never_resolve_names(tmp_path, monkeypatch):
+    def boom(ip):
+        raise AssertionError("reverse DNS used")
+    monkeypatch.setattr("socket.gethostbyaddr", boom)
+    for extra in (["--offline"], ["--no-rdns"]):
+        rc = main(["--input", str(SAMPLES / "traceroute_sample.txt"), "--geo-file", str(SAMPLES / "geo_sample.json"),
+                   "--no-cache", "--cables", "illustrative", "--origin", "12.97,77.59",
+                   "-o", str(tmp_path / extra[0].strip("-")), *extra])
+        assert rc == 0

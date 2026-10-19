@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traceyourpacket"
+version = "2.1.0"
+description = "Trace your packets across the world's submarine cables: an animated, interactive traceroute visualiser"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "GPL-3.0-or-later" }
+dependencies = ["numpy>=1.21"]
+
+[project.optional-dependencies]
+png = ["matplotlib>=3.7", "basemap>=2.0", "pyproj>=3.4"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+tracemap = "tracemap.cli:main"
+traceyourpacket = "tracemap.cli:main"
+
+[tool.setuptools]
+packages = ["tracemap", "tracemap.assets"]
+
+[tool.setuptools.package-data]
+"tracemap.assets" = ["*.html", "*.css", "*.js", "*.json", "*.geojson", "*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
