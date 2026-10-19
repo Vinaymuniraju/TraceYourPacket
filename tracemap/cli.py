@@ -216,8 +216,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         mdata = build_map_data(trace, geo, method, cs, args.origin, asn=asn_map)
         if mdata:
             map_doc = render_map(mdata)
+            from .latency import latency_section_html
             from .mapviz import network_section_html
-            cable_html = cable_section_html(mdata) + network_section_html(mdata)
+            cable_html = (cable_section_html(mdata) + latency_section_html(mdata)
+                          + network_section_html(mdata))
             hop_notes = hop_cable_notes(mdata)
             mp = args.outdir / f"route_{safe}_map.html"
             mp.write_text(map_doc, encoding="utf-8")
