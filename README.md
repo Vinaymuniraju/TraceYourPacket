@@ -56,11 +56,13 @@ An example run on synthetic data is committed in `example_output/`.
 
 ```
 sudo apt install traceroute          # Linux. macOS and Windows already ship a traceroute
-pip install -r requirements.txt
-./vis_route.py 8.8.8.8 --origin 12.97,77.59
+git clone https://github.com/Vinaymuniraju/TraceYourPacket && cd TraceYourPacket
+pip install .                        # installs the `tracemap` command (add ".[png]" for the static PNG map)
+tracemap 8.8.8.8 --origin 12.97,77.59 --open
 ```
 
-Then open `output/route_8.8.8.8.html` in a browser.
+`--open` opens the finished report in your browser. Without installing, `./vis_route.py 8.8.8.8` and
+`python -m tracemap 8.8.8.8` do the same thing from the project folder.
 
 No network and no traceroute binary? Replay the bundled sample:
 
@@ -70,8 +72,8 @@ No network and no traceroute binary? Replay the bundled sample:
                --offline --cables illustrative --origin 12.97,77.59
 ```
 
-Requirements: Python 3 (developed on 3.13) and a browser. `matplotlib`, `basemap` and `pyproj` are only used for the
-optional static PNG.
+Requirements: Python 3.9 or newer (developed on 3.13), `numpy`, and a browser. `matplotlib`, `basemap` and `pyproj` are
+only needed for the optional static PNG (`pip install ".[png]"`).
 
 ## Usage
 
@@ -93,6 +95,9 @@ python -m tracemap.cli TARGET [options]      # same thing
 | `--origin LAT,LON` | Draw your own location as the start of the route |
 | `--cables auto\|telegeography\|illustrative\|none` | Cable data source for the map (default `auto`) |
 | `--cables-file GEOJSON` | Use your own cable GeoJSON instead of downloading |
+| `--refresh-cables` | Ignore the cached cable data and download it again |
+| `--no-rdns` | Do not look up router hostnames (they are used as location hints; see below) |
+| `--open` | Open the finished report in your browser |
 | `--no-map` | Skip the interactive cable map |
 | `--no-report` | Skip the HTML report |
 | `--png` | Also write the classic static PNG map |
@@ -100,7 +105,8 @@ python -m tracemap.cli TARGET [options]      # same thing
 | `-o, --outdir DIR` | Output folder (default `./output`) |
 | `-v` | Log lookup problems |
 
-Exit codes: `0` success, `1` the traceroute or a lookup failed, `2` bad arguments.
+Exit codes: `0` success, `1` the traceroute failed or required data was unavailable (for example
+`--cables telegeography` with no download and no cache), `2` bad arguments.
 
 ### Common recipes
 
@@ -116,8 +122,8 @@ Exit codes: `0` success, `1` the traceroute or a lookup failed, `2` bad argument
 
 | Mode | Behaviour |
 |---|---|
-| `auto` | Try the TeleGeography download (cached), fall back to the bundled illustrative corridors |
-| `telegeography` | Real data only; fail loudly if it cannot be fetched |
+| `auto` | Try the TeleGeography download (cached for 14 days), then an older cached copy, then the bundled illustrative corridors. The map says which one it used and why |
+| `telegeography` | Real data only; exits with an error if it cannot be fetched or read from the cache |
 | `illustrative` | Bundled hand-placed corridors. Always works offline, clearly labelled on the map |
 | `none` | No cables; the route is drawn as plain great-circle legs |
 
@@ -162,6 +168,40 @@ Sections:
    and the destination, plus what this program does before and after.
 7. **Packet anatomy:** IPv4 and UDP/ICMP/TCP headers of a probe and of the ICMP "time exceeded"
    reply, with the fields that make traceroute work highlighted.
+
+## Checking the locations
+
+IP-geolocation databases often place a carrier's routers at its head office, which breaks the map.
+Two checks, both automatic, catch most of that:
+
+**1. Physics check.** A reply cannot come back faster than light travels there and back. For every
+located hop, the best RTT is compared with the straight-line round trip from you (or from the first
+located hop when you did not pass `--origin`; the bound is relaxed by that hop's own RTT so it stays valid).
+
+| Level | Meaning |
+|---|---|
+| `impossible` | Faster than light in a vacuum (about 300 km/ms). The location is certainly wrong |
+| `suspicious` | Faster than light in fibre over a straight line (about 200 km/ms, 5% tolerance). The location is very likely wrong, or the address is anycast |
+
+Hops closer than 300 km are skipped because city-level location error is larger than the signal. Flagged
+hops show a warning in the map's hop list, a "doubtful locations" chip, a note in the report and a
+`warn:` line on the terminal.
+
+**2. Hostname hints.** Operators name routers after their city (`ae1.cr2-fra2.ip.example.net`,
+`be2.ear1.london1.level3.net`). TraceYourPacket looks up each public hop's reverse DNS name (unless
+`--offline` or `--no-rdns`) and reads airport and city codes from it using a small bundled table of
+about 100 hub cities. A hostname never overrides the database on its own; it only changes a location when
+the physics agrees:
+
+- the database has no location: the hostname location is used (marked "Located from hostname");
+- both agree within 300 km: nothing changes;
+- they disagree and the RTT rules out the database location but not the hostname's: the hostname wins,
+  and the hop's note says so;
+- they disagree and the RTT settles nothing: the database stays and the note shows what the hostname suggested.
+
+Bare three-letter codes without a digit (`fra`, `pop`) are ignored because they collide with ordinary
+router words; `fra2` and `frankfurt` are accepted. Two different cities in one name count as ambiguous
+and are ignored.
 
 ## How it works
 
@@ -213,7 +253,7 @@ Consequences you should keep in mind:
 
 - The named cable is the **most plausible** one for that corridor, not a confirmed carrier.
 - Router locations from IP databases are often an operator's head office, so some legs will be
-  wrong or implausibly short.
+  wrong or implausibly short. The location checks above catch many, not all, of these.
 - If the observed RTT step on a leg is **below** the floor, the location data is wrong. If it is far
   **above**, expect queueing, a longer real route, or an inflated reply time at that router.
 
@@ -235,7 +275,9 @@ maps generated from it in commercial products without checking their terms.
 - **Only public hop addresses** are sent to the geolocation API. Private (RFC 1918), carrier-grade
   NAT, loopback, link-local and documentation addresses are never sent.
 - `--offline` with `--geo-file` sends **nothing** anywhere and downloads nothing.
-- Results are cached at `~/.cache/tracemap/`. `--no-cache` disables the cache.
+- Results are cached at `~/.cache/tracemap/`. `--no-cache` disables the geolocation cache.
+- **Reverse DNS:** hostname hints need a PTR lookup per public hop, sent to your normal DNS resolver
+  (the same thing `traceroute` does when you leave off `-n`). `--no-rdns` or `--offline` turns it off.
 - **No shell is ever used.** The target is validated (IPv4 or hostname, no leading `-`) and passed to
   `traceroute` as a list argument, so `8.8.8.8; anything` is rejected.
 - Untrusted strings (hostnames, city names from the API) are HTML-escaped or inserted with
@@ -254,13 +296,16 @@ tracemap/
   runner.py              target validation, building and running traceroute (no shell)
   parser.py              Linux/macOS and Windows output parser
   geo.py                 IP classification, geolocation with cache, haversine
-  cables.py              cable data loading, graph, Dijkstra routing
+  cables.py              cable data loading (download, validate, cache), graph, Dijkstra routing
+  sanity.py              physical RTT-versus-distance checks on hop locations
+  hints.py               router hostname to city hints, reverse DNS
   mapviz.py              builds the map data, renders the offline map, leg table, per-hop notes
   report.py, report_css.py   the HTML report
   plot.py                optional static matplotlib/basemap map
   assets/                map.html/.css/.js, d3, topojson, world atlas, illustrative cables
 samples/                 synthetic traceroute and geolocation (RFC 5737 addresses)
 tools/make_illustrative.py   generates the illustrative corridors
+tools/make_city_codes.py     generates assets/city_codes.json (airport and city codes)
 tests/                   pytest suite
 example_output/          generated from the samples only
 ```
@@ -297,8 +342,9 @@ Regenerate the example output (synthetic data only, never a real trace):
 
 ## Roadmap
 
-- **Phase 1, trustworthy:** verified live cable download and failure handling, hostname-based
-  location hints (airport and city codes), physically impossible RTT detection, one-command `tracemap <host>`.
+- **Phase 1, trustworthy: done.** Robust cable download with validation, atomic cache and clear
+  fallback notes; physically impossible RTT detection; hostname location hints; `tracemap <host> --open`.
+  Still to do on your machine: confirm the live TeleGeography download against the real service.
 - **Phase 2, richer analysis:** ASN and operator per hop with the path coloured by network, multi-probe
   discovery of load-balanced branches, latency-per-leg chart.
 - **Phase 3, history:** saved runs, route diffing, timeline replay, comparing destinations, scheduled
