@@ -126,7 +126,8 @@ python -m tracemap.cli --input samples/traceroute_sample.txt --geo-file samples/
     --offline --origin 12.97,77.59 --cables illustrative -o example_output
 ```
 
-* `--cables auto|telegeography|illustrative|none`, `--cables-file my.geojson`, `--no-map`.
+* `--cables auto|telegeography|illustrative|none`, `--cables-file my.geojson`, `--no-map`, `--png` (classic static map, only written on request or when no cable map exists).
+* The report embeds the map in a pinned pane; clicking a hop card or table row replays that probe on the map, and playback highlights the matching notes.
 * **The cable path is inferred, not measured.** Traceroute shows IP hops, not cables. The route is the
   shortest path over a graph of cable landings (plus straight-line overland links, drawn dashed gold).
 * `illustrative` corridors are hand-placed approximations bundled for offline use and are labelled as such

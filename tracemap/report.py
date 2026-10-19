@@ -228,7 +228,7 @@ def _hop_notes(trace: Trace, idx: int, geo: dict, method: str) -> list[str]:
     return notes
 
 
-def _hop_card(trace: Trace, idx: int, geo: dict, method: str) -> str:
+def _hop_card(trace: Trace, idx: int, geo: dict, method: str, extra: str = "") -> str:
     m = METHODS[method]
     hop = trace.hops[idx]
     is_dest = trace.reached and idx == len(trace.hops) - 1
@@ -285,7 +285,9 @@ def _hop_card(trace: Trace, idx: int, geo: dict, method: str) -> str:
     notes_html = ""
     if notes:
         notes_html = "<ul>" + "".join(f"<li>{n}</li>" for n in notes) + "</ul>"
-    return f'<div class="{cls_card}">{head}{badges}{steps}{notes_html}</div>'
+    extra_html = f'<p class="cablenote">{extra}</p>' if extra else ""
+    return (f'<div class="{cls_card} hopcard" data-hop="{idx}" tabindex="0" role="button" '
+            f'aria-label="Replay hop {hop.ttl} on the map">{head}{badges}{extra_html}{steps}{notes_html}</div>')
 
 
 # --------------------------------------------------------------------------
@@ -459,6 +461,7 @@ def render_report(
     origin: Optional[tuple[float, float]] = None,
     map_doc: Optional[str] = None,
     cable_html: str = "",
+    hop_notes: Optional[dict] = None,
 ) -> str:
     method = method if method in METHODS else "udp"
     hops = trace.hops
@@ -485,7 +488,7 @@ def render_report(
         cls = classify_ip(h.ip) if h.ip else "-"
         pct = 0 if h.rtt_avg is None else max(2, int(100 * h.rtt_avg / max_avg))
         rows.append(
-            f"<tr><td>{h.ttl}</td><td class='mono'>{esc(h.ip or '* * *')}</td>"
+            f"<tr data-hop='{idx}' class='hoprow'><td>{h.ttl}</td><td class='mono'>{esc(h.ip or '* * *')}</td>"
             f"<td>{esc(_role(h, idx, cls, trace.reached and idx == len(hops) - 1)) if h.ip else 'no reply'}</td>"
             f"<td>{esc(g.label) if g else '<span class=muted>not located</span>'}</td>"
             f"<td>{esc(_ms(h.rtt_min))}</td><td>{esc(_ms(h.rtt_avg))}</td><td>{esc(_ms(h.rtt_max))}</td>"
@@ -521,13 +524,14 @@ def render_report(
         f"<div class='stats'>{stat_html}</div>",
         "<h2>Route on the map</h2>",
         (
-            "<iframe class='cablemap' title='Interactive submarine cable map' loading='lazy' "
-            "sandbox='allow-scripts' style='width:100%;height:78vh;min-height:560px;border:1px solid "
-            "var(--line,#334);border-radius:12px;background:#050912' srcdoc=\""
-            + esc(map_doc) + "\"></iframe>"
-            if map_doc else ""
+            "<div class='mapwrap' id='mapwrap'><div class='maptools'>"
+            "<span>Click any hop below to replay it on the map. Click a hop on the map to jump to its notes.</span>"
+            "<label><input type='checkbox' id='follow' checked> Follow playback</label><button type='button' id='pin' aria-pressed='true'>Pin map</button></div>"
+            "<iframe id='cablemap' title='Interactive submarine cable map' sandbox='allow-scripts' srcdoc=\""
+            + esc(map_doc) + "\"></iframe></div>"
+            if map_doc else map_html
         ),
-        map_html, cable_html,
+        cable_html,
         "<h2>How the packets travelled</h2>",
         "<p>Each row is one probe. It leaves your computer with a TTL that equals the row's number. "
         "The circle on every router it crosses shows the TTL left after that router subtracted 1. "
@@ -557,7 +561,7 @@ def render_report(
         parts.append(f"<p>{esc(txt)}</p>")
     parts += [
         "<h2>What happened at each hop</h2>",
-        "<div class='cards'>" + "".join(_hop_card(trace, i, geo, method) for i in range(len(hops))) + "</div>",
+        "<div class='cards'>" + "".join(_hop_card(trace, i, geo, method, (hop_notes or {}).get(i, "")) for i in range(len(hops))) + "</div>",
         "<h2>What each device and program does</h2>", panels_html(trace, method),
         "<h2>Packet anatomy</h2>", anatomy_html(trace, method),
         "<footer><p>Reading the numbers: a hop's RTT includes the time its router needs to generate "
@@ -566,4 +570,43 @@ def render_report(
         "the ones routers put in their replies, which are not always the interface the probe came in on.</p></footer>",
         "</main></body></html>",
     ]
+    if map_doc:
+        parts.insert(-1, BRIDGE_JS) if False else parts.append(BRIDGE_JS)
     return "".join(parts)
+
+
+BRIDGE_JS = """<script>
+(function(){
+  var f=document.getElementById('cablemap'); if(!f) return;
+  var cur=null;
+  function play(i){ f.contentWindow.postMessage({tracemap:'play',i:i},'*'); }
+  function mark(i){
+    document.querySelectorAll('.hoprow.live,.hopcard.live').forEach(function(e){e.classList.remove('live');});
+    document.querySelectorAll('[data-hop="'+i+'"]').forEach(function(e){e.classList.add('live');});
+  }
+  document.addEventListener('click',function(e){
+    var t=e.target.closest&&e.target.closest('[data-hop]'); if(!t) return;
+    var i=parseInt(t.getAttribute('data-hop'),10); if(isNaN(i)) return; mark(i); play(i);
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'&&e.key!==' ') return;
+    var t=e.target.closest&&e.target.closest('.hopcard'); if(!t) return;
+    e.preventDefault(); t.click();
+  });
+  window.addEventListener('message',function(e){
+    if(e.source!==f.contentWindow||!e.data||e.data.tracemap!=='probe') return;
+    var i=e.data.i; if(!Number.isInteger(i)||i===cur) return; cur=i; mark(i);
+    var c=document.querySelector('.hopcard[data-hop="'+i+'"]');
+    if(c&&document.getElementById('follow').checked){
+      var wrap=document.getElementById('mapwrap').getBoundingClientRect();
+      var top=c.getBoundingClientRect().top, bottom=c.getBoundingClientRect().bottom;
+      if(top<wrap.bottom||bottom>window.innerHeight) window.scrollTo({top:window.scrollY+top-wrap.bottom-12,behavior:'smooth'});
+    }
+  });
+  var pin=document.getElementById('pin'), w=document.getElementById('mapwrap');
+  pin.addEventListener('click',function(){
+    var on=pin.getAttribute('aria-pressed')!=='true'; pin.setAttribute('aria-pressed',on);
+    w.classList.toggle('unpinned',!on);
+  });
+})();
+</script>"""

@@ -52,6 +52,8 @@ def build_parser() -> argparse.ArgumentParser:
                    default="auto", help="submarine cable data for the interactive map (default auto)")
     p.add_argument("--cables-file", type=Path, metavar="GEOJSON",
                    help="use your own cable GeoJSON instead of downloading")
+    p.add_argument("--png", action="store_true",
+                   help="also write the classic static PNG map (default: only when no cable map is made)")
     p.add_argument("--no-map", action="store_true", help="skip the interactive cable map")
     p.add_argument("--no-report", action="store_true", help="skip the HTML packet-path report")
     p.add_argument("--show", action="store_true", help="open an interactive map window")
@@ -114,14 +116,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", trace.target or "route")
     args.outdir.mkdir(parents=True, exist_ok=True)
     png = args.outdir / f"route_{safe}.png"
-    if located:
-        from .plot import plot_route
-
-        plot_route(located, png, show=args.show, origin=args.origin,
-                   title=f"Route to {trace.target} ({trace.target_ip})")
-        print(f"map:    {png}")
-    else:
-        print("note: no hop could be located, so no map was drawn")
 
     data = {
         "target": trace.target,
@@ -153,28 +147,40 @@ def main(argv: Optional[list[str]] = None) -> int:
     js.write_text(json.dumps(data, indent=2))
     print(f"data:   {js}")
 
-    map_doc, cable_html = None, ""
+    map_doc, cable_html, hop_notes = None, "", None
     if not args.no_map and args.cables != "none":
         from .cables import load_cables
-        from .mapviz import build_map_data, cable_section_html, render_map
+        from .mapviz import build_map_data, cable_section_html, hop_cable_notes, render_map
 
         cs = load_cables(args.cables, args.cables_file, offline=args.offline)
         mdata = build_map_data(trace, geo, method, cs, args.origin)
         if mdata:
             map_doc = render_map(mdata)
             cable_html = cable_section_html(mdata)
+            hop_notes = hop_cable_notes(mdata)
             mp = args.outdir / f"route_{safe}_map.html"
             mp.write_text(map_doc, encoding="utf-8")
             print(f"map:    {mp}  (cables: {cs.source})")
         else:
             print("map:    skipped (no hop could be located)")
 
+    if args.png or not map_doc:
+        if located:
+            from .plot import plot_route
+
+            plot_route(located, png, show=args.show, origin=args.origin,
+                       title=f"Route to {trace.target} ({trace.target_ip})")
+            print(f"map:    {png}")
+        else:
+            print("note: no hop could be located, so no map was drawn")
+
+
     if not args.no_report:
         from .report import render_report
 
-        png_b64 = base64.b64encode(png.read_bytes()).decode() if located else None
+        png_b64 = base64.b64encode(png.read_bytes()).decode() if (located and png.exists() and not map_doc) else None
         html = args.outdir / f"route_{safe}.html"
-        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html), encoding="utf-8")
+        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html, hop_notes), encoding="utf-8")
         print(f"report: {html}")
 
     print(f"{len(trace.hops)} hops, destination {'reached' if trace.reached else 'not reached'}")

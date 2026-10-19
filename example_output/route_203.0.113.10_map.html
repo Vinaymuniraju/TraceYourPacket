@@ -431,7 +431,13 @@ function startProbe(i) {
   S.km = stationKm(h);
   S.dur = S.km < 1 ? 500 : clamp(oneWayMs(h) * SCALE, 900, 6500);
   log(`TTL ${h.ttl}: ${D.proto.name} probe leaves toward ${D.target_ip}`);
+  try { if (window.parent !== window) window.parent.postMessage({ tracemap: 'probe', i }, '*'); } catch (e) {}
 }
+window.addEventListener('message', (ev) => {
+  const d = ev.data;
+  if (ev.source !== window.parent || !d || d.tracemap !== 'play') return;
+  if (Number.isInteger(d.i) && d.i >= 0 && d.i < hops.length) playFrom(d.i);
+});
 function playFrom(i) {
   mode = 'probe'; flow = []; flowPool.forEach(hidePacket);
   syncModeButtons();

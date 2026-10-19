@@ -235,3 +235,27 @@ def cable_section_html(data: dict) -> str:
         "or a longer real route. A hop whose location came from an IP database may sit at the "
         "operator's head office, not at the router. Cable data: " + src + ". " + note + "</p>"
     )
+
+
+def hop_cable_notes(data: dict) -> dict[int, str]:
+    """Hop index -> HTML note saying which leg and cable the probe used to get there."""
+    st, hops, legs = data["stations"], data["hops"], data["legs"]
+    out: dict[int, str] = {}
+    seen_station = 0
+    for i, h in enumerate(hops):
+        s = h["station"]
+        if s > seen_station and s - 1 < len(legs):
+            leg = legs[s - 1]
+            names = [sg["name"] for sg in leg["segments"] if sg["kind"] == "cable" and sg["name"]]
+            how = ("over " + ", ".join(escape(n) for n in dict.fromkeys(names))) if names else "over land (straight-line estimate)"
+            out[i] = (
+                "<b>Cable map:</b> this probe moved from <b>%s</b> to <b>%s</b>, %s km (%s km on cable), %s. "
+                "Light needs at least %.1f ms round trip for that leg."
+                % (escape(st[s - 1]["label"]), escape(st[s]["label"]),
+                   "{:,.0f}".format(leg["km"]), "{:,.0f}".format(leg["cableKm"]), how, leg["km"] / 100.0)
+            )
+            seen_station = s
+        elif h["located"] or h["ip"]:
+            out[i] = ("<b>Cable map:</b> still at <b>%s</b>, so no long-haul link was crossed to reach this hop."
+                      % escape(st[s]["label"]))
+    return out

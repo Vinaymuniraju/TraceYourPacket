@@ -14,15 +14,18 @@ def test_end_to_end_with_sample(tmp_path, capsys):
     rc = main([
         "--input", str(SAMPLES / "traceroute_sample.txt"),
         "--geo-file", str(SAMPLES / "geo_sample.json"),
-        "--offline", "--no-cache", "--origin", "12.97,77.59",
-        "-o", str(tmp_path),
+        "--offline", "--no-cache", "--origin", "12.97,77.59", "--png",
+        "--cables", "illustrative", "-o", str(tmp_path),
     ])
     assert rc == 0
     png = tmp_path / "route_203.0.113.10.png"
     html = tmp_path / "route_203.0.113.10.html"
     data = json.loads((tmp_path / "route_203.0.113.10.json").read_text())
     assert png.stat().st_size > 10_000
-    assert html.read_text().startswith("<!doctype html>")
+    text = html.read_text()
+    assert text.startswith("<!doctype html>")
+    assert 'id="cablemap"' in text.replace("'", '"') and "data:image/png" not in text
+    assert 'data-hop="3"' in text.replace("'", '"')
     assert data["reached"] and len(data["hops"]) == 11
     assert data["hops"][4]["responders"] == []          # the lost hop
     assert data["hops"][0]["responders"][0]["location"] is None  # private, not located
@@ -68,3 +71,9 @@ def test_great_circle_splits_at_the_date_line():
     for seg in segs:
         lons = [p[0] for p in seg]
         assert max(lons) - min(lons) < 180
+
+
+def test_no_png_by_default_with_map(tmp_path):
+    rc = main(["--input", str(SAMPLES / "traceroute_sample.txt"), "--geo-file", str(SAMPLES / "geo_sample.json"),
+               "--offline", "--no-cache", "--cables", "illustrative", "-o", str(tmp_path)])
+    assert rc == 0 and not list(tmp_path.glob("*.png"))
