@@ -48,6 +48,8 @@ class GeoInfo:
     region: Optional[str] = None
     country: Optional[str] = None
     org: Optional[str] = None
+    source: str = "ip-database"      # or "hostname" when a router name placed it
+    note: Optional[str] = None       # why this location differs from the IP database
 
     @property
     def label(self) -> str:

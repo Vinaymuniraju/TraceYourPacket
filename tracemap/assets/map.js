@@ -471,6 +471,10 @@ const rows = hops.map((h, i) => {
   const mid = el('div');
   mid.appendChild(el('div', 'ip mono', h.ip || '* * *'));
   mid.appendChild(el('div', 'loc', h.located ? h.label : (h.ip ? h.cls : 'no reply')));
+  if (h.locSource === 'hostname' || h.locNote) {
+    const n = el('div', 'hnote', h.locSource === 'hostname' ? 'Located from hostname' : 'Hostname suggests another city');
+    n.title = h.locNote || ''; mid.appendChild(n);
+  }
   if (h.check) {
     const w = el('div', 'wchk ' + h.check.level, (h.check.level === 'impossible' ? 'Location impossible' : 'Location doubtful') + ': RTT too low for the distance');
     w.title = h.check.msg; mid.appendChild(w);

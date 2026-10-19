@@ -286,6 +286,9 @@ def _hop_card(trace: Trace, idx: int, geo: dict, method: str, extra: str = "", f
     if notes:
         notes_html = "<ul>" + "".join(f"<li>{n}</li>" for n in notes) + "</ul>"
     extra_html = f'<p class="cablenote">{extra}</p>' if extra else ""
+    gi = geo.get(hop.ip) if hop.ip else None
+    if gi is not None and gi.note:
+        extra_html += f'<p class="cablenote"><b>Hostname hint:</b> {esc(gi.note)}</p>'
     if finding is not None:
         extra_html += (f'<p class="locwarn {esc(finding.level)}"><b>Location check:</b> '
                        f'{esc(finding.message())}</p>')

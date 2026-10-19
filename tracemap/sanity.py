@@ -45,37 +45,46 @@ class Finding:
                 "or this address is anycast.")
 
 
+def _reference(trace: Trace, geo, origin):
+    """Return (ref_latlon, slack_ms, basis) or None when no reference point exists."""
+    if origin:
+        return origin, 0.0, "you"
+    for h in trace.hops:
+        g = geo.get(h.ip) if h.ip else None
+        if g and h.rtts:
+            return (g.lat, g.lon), min(h.rtts), "the first located hop"
+    return None
+
+
+def judge(rtts: list, loc: GeoInfo, ref, slack: float, basis: str) -> Optional[Finding]:
+    """Compare one hop's RTTs with the minimum physically possible for location `loc`."""
+    if not rtts:
+        return None
+    km = haversine_km(GeoInfo(ref[0], ref[1]), loc)
+    if km < MIN_KM:
+        return None
+    best = min(rtts)
+    vac = 2 * km / C_VACUUM_KM_MS - slack
+    fib = (2 * km / C_FIBRE_KM_MS) * FIBRE_TOLERANCE - slack
+    if best < vac:
+        return Finding("impossible", best, max(vac, 0.0), km, basis)
+    if best < fib:
+        return Finding("suspicious", best, max(fib, 0.0), km, basis)
+    return None
+
+
 def check_hops(trace: Trace, geo: dict[str, Optional[GeoInfo]],
                origin: Optional[tuple[float, float]] = None) -> dict[int, Finding]:
     """Map hop index -> Finding for hops whose RTT contradicts their location."""
     out: dict[int, Finding] = {}
-    ref = None
-    slack = 0.0
-    basis = "you"
-    if origin:
-        ref = origin
-    else:
-        basis = "the first located hop"
-        for h in trace.hops:
-            g = geo.get(h.ip) if h.ip else None
-            if g and h.rtts:
-                ref = (g.lat, g.lon)
-                slack = min(h.rtts)
-                break
-    if ref is None:
+    r = _reference(trace, geo, origin)
+    if r is None:
         return out
+    ref, slack, basis = r
     for idx, h in enumerate(trace.hops):
         g = geo.get(h.ip) if h.ip else None
-        if not g or not h.rtts:
-            continue
-        km = haversine_km(GeoInfo(ref[0], ref[1]), g)
-        if km < MIN_KM:
-            continue
-        best = min(h.rtts)
-        vac = 2 * km / C_VACUUM_KM_MS - slack
-        fib = (2 * km / C_FIBRE_KM_MS) * FIBRE_TOLERANCE - slack
-        if best < vac:
-            out[idx] = Finding("impossible", best, max(vac, 0.0), km, basis)
-        elif best < fib:
-            out[idx] = Finding("suspicious", best, max(fib, 0.0), km, basis)
+        if g:
+            f = judge(h.rtts, g, ref, slack, basis)
+            if f:
+                out[idx] = f
     return out

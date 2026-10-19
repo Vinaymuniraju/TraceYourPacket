@@ -82,6 +82,9 @@ def build_map_data(
             "station": station,
             "located": bool(g),
             "label": g.label if g else "",
+            "host": next((r.hostname for r in h.responders if r.hostname), None),
+            "locSource": g.source if g else None,
+            "locNote": g.note if g else None,
             "check": ({"level": findings[idx].level, "msg": findings[idx].message()}
                       if idx in findings else None),
         })

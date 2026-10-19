@@ -132,3 +132,5 @@ select.b{padding-right:6px;color-scheme:dark}
 .wchk{margin-top:2px;font-size:11.5px;color:var(--land);cursor:help}
 .wchk.impossible{color:var(--drop)}
 .wchk::before{content:'\26A0  '}
+.hnote{margin-top:2px;font-size:11.5px;color:#9fd8ff;cursor:help}
+.hnote::before{content:'\2691  '}

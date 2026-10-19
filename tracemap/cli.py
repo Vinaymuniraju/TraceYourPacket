@@ -54,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="use your own cable GeoJSON instead of downloading")
     p.add_argument("--png", action="store_true",
                    help="also write the classic static PNG map (default: only when no cable map is made)")
+    p.add_argument("--no-rdns", action="store_true",
+                   help="do not look up router hostnames (they are used as location hints)")
     p.add_argument("--refresh-cables", action="store_true",
                    help="ignore the cached cable data and download it again")
     p.add_argument("--no-map", action="store_true", help="skip the interactive cable map")
@@ -112,6 +114,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             if r.ip not in geo:
                 geo[r.ip] = resolver.lookup(r.ip)
     resolver.save()
+
+    # Router hostnames (airport and city codes) can check or correct the IP-database locations.
+    from .hints import apply_hints, reverse_dns
+
+    names = {} if (args.offline or args.no_rdns) else reverse_dns(
+        [r.ip for hop in trace.hops for r in hop.responders])
+    for msg in apply_hints(trace, geo, args.origin, names):
+        print(f"hint:   {msg}", file=sys.stderr)
     located = [(h, geo[h.ip]) for h in trace.hops if h.ip and geo.get(h.ip)]
 
     # 4. Outputs.
@@ -133,9 +143,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                     {
                         "ip": r.ip,
                         "class": classify_ip(r.ip),
-                        "hostname": r.hostname,
+                        "hostname": r.hostname or names.get(r.ip),
                         "rtts_ms": r.rtts,
                         "location": (geo[r.ip].label if geo.get(r.ip) else None),
+                        "location_source": (geo[r.ip].source if geo.get(r.ip) else None),
+                        "location_note": (geo[r.ip].note if geo.get(r.ip) else None),
                         "lat": geo[r.ip].lat if geo.get(r.ip) else None,
                         "lon": geo[r.ip].lon if geo.get(r.ip) else None,
                     }
