@@ -1,0 +1,224 @@
+{
+  "target": "203.0.113.10",
+  "target_ip": "203.0.113.10",
+  "method": "udp",
+  "reached": true,
+  "hops": [
+    {
+      "ttl": 1,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "192.168.1.1",
+          "class": "private (RFC 1918)",
+          "hostname": null,
+          "rtts_ms": [
+            1.214,
+            1.102,
+            1.337
+          ],
+          "location": null,
+          "lat": null,
+          "lon": null
+        }
+      ]
+    },
+    {
+      "ttl": 2,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "100.64.0.1",
+          "class": "carrier-grade NAT (RFC 6598)",
+          "hostname": null,
+          "rtts_ms": [
+            3.912,
+            4.25,
+            3.871
+          ],
+          "location": null,
+          "lat": null,
+          "lon": null
+        }
+      ]
+    },
+    {
+      "ttl": 3,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "198.51.100.1",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            5.804,
+            5.911,
+            6.12
+          ],
+          "location": "Bengaluru, India",
+          "lat": 12.9716,
+          "lon": 77.5946
+        }
+      ]
+    },
+    {
+      "ttl": 4,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "198.51.100.5",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            12.113,
+            11.98,
+            12.402
+          ],
+          "location": "Chennai, India",
+          "lat": 13.0827,
+          "lon": 80.2707
+        }
+      ]
+    },
+    {
+      "ttl": 5,
+      "lost_probes": 3,
+      "flags": [],
+      "responders": []
+    },
+    {
+      "ttl": 6,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "198.51.100.9",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            29.44,
+            29.871,
+            29.215
+          ],
+          "location": "Mumbai, India",
+          "lat": 19.076,
+          "lon": 72.8777
+        }
+      ]
+    },
+    {
+      "ttl": 7,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "198.51.100.13",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            31.012,
+            30.774,
+            31.39
+          ],
+          "location": "Mumbai, India",
+          "lat": 19.076,
+          "lon": 72.8777
+        }
+      ]
+    },
+    {
+      "ttl": 8,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "192.0.2.1",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            121.733,
+            122.014,
+            121.69
+          ],
+          "location": "Frankfurt, Germany",
+          "lat": 50.1109,
+          "lon": 8.6821
+        }
+      ]
+    },
+    {
+      "ttl": 9,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "192.0.2.5",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            128.309,
+            128.115,
+            128.662
+          ],
+          "location": "London, United Kingdom",
+          "lat": 51.5074,
+          "lon": -0.1278
+        }
+      ]
+    },
+    {
+      "ttl": 10,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "192.0.2.9",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            197.802,
+            198.411
+          ],
+          "location": "New York, United States",
+          "lat": 40.7128,
+          "lon": -74.006
+        },
+        {
+          "ip": "192.0.2.13",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            199.143
+          ],
+          "location": "New York, United States",
+          "lat": 40.7128,
+          "lon": -74.006
+        }
+      ]
+    },
+    {
+      "ttl": 11,
+      "lost_probes": 0,
+      "flags": [],
+      "responders": [
+        {
+          "ip": "203.0.113.10",
+          "class": "documentation range",
+          "hostname": null,
+          "rtts_ms": [
+            214.337,
+            213.905,
+            214.812
+          ],
+          "location": "Ashburn, United States",
+          "lat": 39.0438,
+          "lon": -77.4874
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "Synthetic sample. IPs are RFC 5737 documentation addresses; the cities are only there to draw a plausible path.",
+  "198.51.100.1":  {"latitude": 12.9716, "longitude": 77.5946, "city": "Bengaluru", "country_name": "India"},
+  "198.51.100.5":  {"latitude": 13.0827, "longitude": 80.2707, "city": "Chennai", "country_name": "India"},
+  "198.51.100.9":  {"latitude": 19.0760, "longitude": 72.8777, "city": "Mumbai", "country_name": "India"},
+  "198.51.100.13": {"latitude": 19.0760, "longitude": 72.8777, "city": "Mumbai", "country_name": "India"},
+  "192.0.2.1":     {"latitude": 50.1109, "longitude": 8.6821,  "city": "Frankfurt", "country_name": "Germany"},
+  "192.0.2.5":     {"latitude": 51.5074, "longitude": -0.1278, "city": "London", "country_name": "United Kingdom"},
+  "192.0.2.9":     {"latitude": 40.7128, "longitude": -74.0060, "city": "New York", "country_name": "United States"},
+  "192.0.2.13":    {"latitude": 40.7128, "longitude": -74.0060, "city": "New York", "country_name": "United States"},
+  "203.0.113.10":  {"latitude": 39.0438, "longitude": -77.4874, "city": "Ashburn", "country_name": "United States"}
+}
