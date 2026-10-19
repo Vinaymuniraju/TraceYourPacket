@@ -43,7 +43,7 @@ def test_private_and_cgnat_are_local_without_network():
     op = Opener(exc=AssertionError("network used"))
     r = AsnResolver(opener=op)
     assert r.lookup("192.168.1.1").key == "local"
-    assert r.lookup("100.64.0.1").name.lower().startswith("carrier")
+    assert r.lookup("100.64.0.1").name == "Your ISP (carrier-grade NAT)"
     assert op.urls == []
 
 

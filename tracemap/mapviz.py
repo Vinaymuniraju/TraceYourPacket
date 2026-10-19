@@ -11,6 +11,7 @@ from .geo import GeoInfo, classify_ip
 from .parser import Trace
 from .report import METHODS, _role
 from .sanity import check_hops
+from .asn import AsnInfo, colour_for
 
 
 _PORTS = {"udp": "dst port 33434+", "icmp": "", "tcp": "dst port 80"}
@@ -39,6 +40,7 @@ def build_map_data(
     cableset: CableSet,
     origin: Optional[tuple[float, float]] = None,
     graph: Optional[CableGraph] = None,
+    asn: Optional[dict] = None,
 ) -> Optional[dict]:
     """Return the data blob for the map, or None when nothing can be placed."""
     method = method if method in METHODS else "udp"
@@ -70,6 +72,7 @@ def build_map_data(
         else:
             station = len(stations) - 1  # no location: assume it sits where the last known hop is
         cls = classify_ip(h.ip) if h.ip else "-"
+        info = (asn or {}).get(h.ip) if h.ip else None
         is_dest = trace.reached and idx == len(trace.hops) - 1
         hops_out.append({
             "ttl": h.ttl,
@@ -85,9 +88,27 @@ def build_map_data(
             "host": next((r.hostname for r in h.responders if r.hostname), None),
             "locSource": g.source if g else None,
             "locNote": g.note if g else None,
+            "net": (info.key if info else ("unknown" if h.ip else None)),
+            "asnLabel": (info.label if info else None),
             "check": ({"level": findings[idx].level, "msg": findings[idx].message()}
                       if idx in findings else None),
         })
+
+    order: list[str] = []
+    labels: dict[str, str] = {}
+    for h, ho in zip(trace.hops, hops_out):
+        if ho["net"] and ho["net"] not in order:
+            order.append(ho["net"])
+        if ho["net"] and ho["asnLabel"]:
+            labels.setdefault(ho["net"], ho["asnLabel"])
+    nets_out = []
+    for k in order:
+        col = "#6b7894" if k == "unknown" else colour_for(k, order)
+        nets_out.append({"key": k, "label": ("Unknown network" if k == "unknown" else labels.get(k, k)),
+                         "color": col, "hops": [ho["ttl"] for ho in hops_out if ho["net"] == k]})
+    handoffs = find_handoffs(hops_out)
+    for ho in hops_out:
+        ho["handoff"] = next((x for x in handoffs if x["ttl"] == ho["ttl"]), None)
 
     if graph is None:
         graph = CableGraph(cableset.cables)
@@ -98,7 +119,9 @@ def build_map_data(
         for n in leg.cables:
             if n not in used:
                 used.append(n)
+        arrive = next((ho for ho in hops_out if ho["station"] == len(legs_out) + 1 and ho["net"]), None)
         legs_out.append({
+            "net": (arrive["net"] if arrive else (legs_out[-1]["net"] if legs_out else None)),
             "km": round(leg.km, 1),
             "cableKm": round(leg.cable_km, 1),
             "cables": leg.cables,
@@ -136,6 +159,8 @@ def build_map_data(
         "hops": hops_out,
         "legs": legs_out,
         "usedCables": used,
+        "nets": nets_out,
+        "handoffs": handoffs,
         "warnings": len(findings),
         "cables": {
             "features": features,
@@ -268,3 +293,51 @@ def hop_cable_notes(data: dict) -> dict[int, str]:
             out[i] = ("<b>Cable map:</b> still at <b>%s</b>, so no long-haul link was crossed to reach this hop."
                       % escape(st[s]["label"]))
     return out
+
+
+def find_handoffs(hops: list[dict]) -> list[dict]:
+    """Where traffic changes from one network to the next (local and unknown hops are skipped).
+
+    The first public network is "your ISP"; its first change is where you leave it.
+    """
+    out: list[dict] = []
+    prev = None
+    for h in hops:
+        k = h.get("net")
+        if not k or k in ("local", "unknown"):
+            continue
+        if prev and k != prev["net"]:
+            out.append({"ttl": h["ttl"], "ip": h["ip"], "from": prev["label"], "to": h["asnLabel"] or k,
+                        "fromKey": prev["net"], "toKey": k, "leavesIsp": not out})
+        prev = {"net": k, "label": h["asnLabel"] or k}
+    return out
+
+
+def network_section_html(data: dict) -> str:
+    """Report section: the networks on the path and where traffic changes hands."""
+    nets, handoffs = data.get("nets") or [], data.get("handoffs") or []
+    if not nets:
+        return ""
+    rows = []
+    for n in nets:
+        ttls = n["hops"]
+        span = "TTL %d" % ttls[0] if len(ttls) == 1 else "TTL %d to %d (%d hops)" % (ttls[0], ttls[-1], len(ttls))
+        rows.append("<tr><td><span style='display:inline-block;width:11px;height:11px;border-radius:3px;"
+                    "background:%s;margin-right:8px'></span>%s</td><td>%s</td></tr>"
+                    % (escape(n["color"]), escape(n["label"]), escape(span)))
+    hand = "".join(
+        "<li><b>TTL %d</b> (<span class='mono'>%s</span>): %s &rarr; <b>%s</b>%s</li>"
+        % (h["ttl"], escape(h["ip"] or "?"), escape(h["from"]), escape(h["to"]),
+           " <i>(you leave your ISP here)</i>" if h["leavesIsp"] else "")
+        for h in handoffs)
+    return (
+        "<h2>Networks on the path</h2>"
+        "<p class='muted'>Each router address belongs to one network (autonomous system). The map colours "
+        "the route by network. Where the colour changes, your traffic is handed from one operator to the next.</p>"
+        "<div class='scroll'><table class='hops'><thead><tr><th>Network</th><th>Hops</th></tr></thead><tbody>"
+        + "".join(rows) + "</tbody></table></div>"
+        + ("<h3>Handoffs</h3><ul>" + hand + "</ul>" if hand else
+           "<p class='muted'>No change of network was seen on the public part of the path.</p>")
+        + "<p class='muted'>Network data comes from RIPEstat or your --asn-file. Private and carrier-grade NAT "
+          "addresses belong to your own or your ISP's network and are shown as local.</p>"
+    )

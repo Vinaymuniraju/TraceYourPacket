@@ -35,6 +35,14 @@ NET_PALETTE = ["#7c9cff", "#ff8a65", "#4dd0a1", "#f7c948", "#c58bff", "#5ad1e6",
 LOCAL_COLOR = "#8b9ab3"
 
 
+_LOCAL_NAMES = {
+    "private (RFC 1918)": "Your network",
+    "loopback": "Your computer",
+    "link-local": "Your network",
+    "carrier-grade NAT (RFC 6598)": "Your ISP (carrier-grade NAT)",
+}
+
+
 @dataclass
 class AsnInfo:
     asn: Optional[int]          # None for local (private/CGNAT) networks
@@ -109,8 +117,7 @@ class AsnResolver:
                 return info
         cls = classify_ip(ip)
         if cls != "public":
-            return AsnInfo(None, "Your network" if cls.startswith(("private", "loopback", "link"))
-                           else cls.split(" (")[0].capitalize(), None, "local")
+            return AsnInfo(None, _LOCAL_NAMES.get(cls, cls.split(" (")[0].capitalize()), None, "local")
         cached = self._cache.get(ip)
         if cached:
             return AsnInfo(cached["asn"], cached["name"], cached.get("prefix"), "ripestat")

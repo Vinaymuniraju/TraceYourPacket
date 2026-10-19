@@ -228,7 +228,7 @@ def _hop_notes(trace: Trace, idx: int, geo: dict, method: str) -> list[str]:
     return notes
 
 
-def _hop_card(trace: Trace, idx: int, geo: dict, method: str, extra: str = "", finding=None) -> str:
+def _hop_card(trace: Trace, idx: int, geo: dict, method: str, extra: str = "", finding=None, net=None) -> str:
     m = METHODS[method]
     hop = trace.hops[idx]
     is_dest = trace.reached and idx == len(trace.hops) - 1
@@ -250,6 +250,8 @@ def _hop_card(trace: Trace, idx: int, geo: dict, method: str, extra: str = "", f
         badges += f'<span class="badge">{esc(cls)}</span>'
         if g:
             badges += f'<span class="badge">{esc(g.label)}</span>'
+        if net:
+            badges += f'<span class="badge">{esc(net.label)}</span>'
         names = [r.hostname for r in hop.responders if r.hostname]
         if names:
             badges += f'<span class="badge">{esc(names[0])}</span>'
@@ -469,6 +471,7 @@ def render_report(
     cable_html: str = "",
     hop_notes: Optional[dict] = None,
     findings: Optional[dict] = None,
+    asn: Optional[dict] = None,
 ) -> str:
     method = method if method in METHODS else "udp"
     hops = trace.hops
@@ -501,6 +504,7 @@ def render_report(
             f"<td>{esc(_role(h, idx, cls, trace.reached and idx == len(hops) - 1)) if h.ip else 'no reply'}</td>"
             f"<td>{esc(g.label) if g else '<span class=muted>not located</span>'}"
             f"{warn_html}</td>"
+            f"<td>{esc(asn[h.ip].label) if asn and h.ip and asn.get(h.ip) else '<span class=muted>-</span>'}</td>"
             f"<td>{esc(_ms(h.rtt_min))}</td><td>{esc(_ms(h.rtt_avg))}</td><td>{esc(_ms(h.rtt_max))}</td>"
             f"<td style='width:140px'><div class='bar' style='width:{pct}%'></div></td></tr>"
         )
@@ -555,7 +559,7 @@ def render_report(
         "</div>",
         f"<div class='scroll'>{sequence_svg(trace, geo, method)}</div>",
         "<h2>Hop table</h2>",
-        "<table class='hops'><thead><tr><th>TTL</th><th>Address</th><th>Role</th><th>Location</th>"
+        "<table class='hops'><thead><tr><th>TTL</th><th>Address</th><th>Role</th><th>Location</th><th>Network</th>"
         "<th>Min</th><th>Avg</th><th>Max</th><th>RTT</th></tr></thead><tbody>" + "".join(rows) +
         "</tbody></table>",
     ]
@@ -571,7 +575,8 @@ def render_report(
         parts.append(f"<p>{esc(txt)}</p>")
     parts += [
         "<h2>What happened at each hop</h2>",
-        "<div class='cards'>" + "".join(_hop_card(trace, i, geo, method, (hop_notes or {}).get(i, ""), (findings or {}).get(i)) for i in range(len(hops))) + "</div>",
+        "<div class='cards'>" + "".join(_hop_card(trace, i, geo, method, (hop_notes or {}).get(i, ""), (findings or {}).get(i),
+                                                (asn or {}).get(hops[i].ip) if hops[i].ip else None) for i in range(len(hops))) + "</div>",
         "<h2>What each device and program does</h2>", panels_html(trace, method),
         "<h2>Packet anatomy</h2>", anatomy_html(trace, method),
         "<footer><p>Reading the numbers: a hop's RTT includes the time its router needs to generate "

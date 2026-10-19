@@ -81,7 +81,7 @@ const R = (function buildRoute() {
         if (pts.length) km += geoKm(pts[pts.length - 1], p);
         pts.push(p); cum.push(km);
       });
-      segs.push({ kind: sg.kind, name: sg.name, color: sg.color, start, end: pts.length - 1 });
+      segs.push({ kind: sg.kind, name: sg.name, color: sg.color, li, start, end: pts.length - 1 });
     });
     stationKm[li + 1] = km;
   });
@@ -111,7 +111,16 @@ const zoom = d3.zoom().scaleExtent([1, 120]).on('zoom', (e) => {
 });
 svg.call(zoom).on('dblclick.zoom', null);
 
-const layers = { cables: true, borders: true, grat: true, landings: true, labels: true };
+const netColor = (k) => { const n = (D.nets || []).find((x) => x.key === k); return n ? n.color : '#6b7894'; };
+function applyNetColors() {
+  gRoute.selectAll('.rt-base').each(function () {
+    const k = this.getAttribute('data-net');
+    const on = k && layers.networks;
+    this.style.stroke = on ? netColor(k) : '';
+    this.classList.toggle('net', !!on);
+  });
+}
+const layers = { networks: true, cables: true, borders: true, grat: true, landings: true, labels: true };
 
 function layout() {
   const r = $('#stage').getBoundingClientRect();
@@ -142,10 +151,12 @@ function layout() {
   R.segs.forEach((s) => {
     const line = { type: 'LineString', coordinates: R.pts.slice(s.start, s.end + 1) };
     if (line.coordinates.length < 2) return;
-    gRoute.append('path').attr('class', 'rt-base ' + s.kind).attr('d', geoPath(line));
+    const nk = D.legs[s.li] && D.legs[s.li].net;
+    gRoute.append('path').attr('class', 'rt-base ' + s.kind).attr('data-net', nk || '').attr('d', geoPath(line));
     gRoute.append('path').attr('class', 'rt-top ' + s.kind).attr('d', geoPath(line));
   });
 
+  applyNetColors();
   onZoom();
 }
 
@@ -286,6 +297,7 @@ function arrive(h) {
   burstAt = [h.station]; burstT = 0;
   if (h.lost) log(`TTL ${h.ttl}: no reply (all ${h.lost} probes lost)`, 'lost');
   else log(`TTL ${h.ttl} hit 0 at ${h.ip}${h.label ? ' (' + h.label + ')' : ''}`, 'drop');
+  if (h.handoff) log(`Handoff: ${h.handoff.from} \u2192 ${h.handoff.to}${h.handoff.leavesIsp ? ' (you leave your ISP)' : ''}`, 'done');
 }
 function replied(h) {
   const last = D.reached && h === hops[hops.length - 1];
@@ -452,9 +464,9 @@ const c2 = el('div', 'ctrl'); [bProbe, bFlow].forEach((b) => c2.appendChild(b));
 const c3 = el('div', 'ctrl'); c3.appendChild(el('span', 'mute', 'Speed')); c3.appendChild(spd); c3.appendChild(bFit); c3.appendChild(bWorld);
 
 const tg = el('div', 'toggles');
-[['cables', 'Cables'], ['landings', 'Landings'], ['borders', 'Borders'], ['grat', 'Grid'], ['labels', 'Labels']].forEach(([k, t]) => {
+[...((D.nets || []).length ? [['networks', 'Networks']] : []), ['cables', 'Cables'], ['landings', 'Landings'], ['borders', 'Borders'], ['grat', 'Grid'], ['labels', 'Labels']].forEach(([k, t]) => {
   const l = el('label'); const c = el('input'); c.type = 'checkbox'; c.checked = true;
-  c.addEventListener('change', () => { layers[k] = c.checked; applyLayerVisibility(); });
+  c.addEventListener('change', () => { layers[k] = c.checked; applyLayerVisibility(); applyNetColors(); });
   l.appendChild(c); l.appendChild(document.createTextNode(t)); tg.appendChild(l);
 });
 
@@ -471,6 +483,10 @@ const rows = hops.map((h, i) => {
   const mid = el('div');
   mid.appendChild(el('div', 'ip mono', h.ip || '* * *'));
   mid.appendChild(el('div', 'loc', h.located ? h.label : (h.ip ? h.cls : 'no reply')));
+  if (h.asnLabel) {
+    const a = el('div', 'asn'); const d = el('i'); d.style.background = netColor(h.net); a.appendChild(d);
+    a.appendChild(document.createTextNode(h.asnLabel)); a.title = h.asnLabel; mid.appendChild(a);
+  }
   if (h.locSource === 'hostname' || h.locNote) {
     const n = el('div', 'hnote', h.locSource === 'hostname' ? 'Located from hostname' : 'Hostname suggests another city');
     n.title = h.locNote || ''; mid.appendChild(n);
@@ -496,6 +512,17 @@ function updateHopList() {
   if (cur >= 0) rows[cur].scrollIntoView({ block: 'nearest' });
 }
 
+const secN = el('div');
+if ((D.nets || []).length) {
+  secN.appendChild(el('h2', null, 'Networks on the path'));
+  D.nets.forEach((n) => {
+    const r = el('div', 'netrow'); const sw = el('i'); sw.style.background = n.color; r.appendChild(sw);
+    r.appendChild(el('span', null, n.label));
+    r.appendChild(el('span', 'mono mute', 'TTL ' + n.hops[0] + (n.hops.length > 1 ? '-' + n.hops[n.hops.length - 1] : '')));
+    secN.appendChild(r);
+  });
+  (D.handoffs || []).forEach((h) => secN.appendChild(el('div', 'note', `TTL ${h.ttl}: ${h.from} \u2192 ${h.to}${h.leavesIsp ? ' (you leave your ISP)' : ''}`)));
+}
 const secD = el('div'); secD.appendChild(el('h2', null, 'Path the packets follow'));
 const legLines = D.legs.map((l, i) => ({ l, i })).filter((x) => x.l.cables.length);
 if (legLines.length) {
@@ -507,7 +534,7 @@ if (legLines.length) {
 }
 secD.appendChild(el('div', 'note', 'A traceroute does not say which cable a packet used. These paths are inferred from geography, and replies are drawn on the same path although the real return route can differ.'));
 
-[secA, secB, secC, secD].forEach((s) => panel.appendChild(s));
+[secA, secB, secC, secN, secD].forEach((s) => panel.appendChild(s));
 
 /* ---------- title card, legend, credit ---------- */
 const tc = $('#titlecard');
@@ -520,6 +547,7 @@ chip(Math.round(D.stats.totalKm).toLocaleString() + ' km', 'path');
 chip(Math.round(D.stats.cableKm).toLocaleString() + ' km', 'on cables', D.stats.cableKm ? 'good' : '');
 if (D.stats.rttMs != null) chip(fmt(D.stats.rttMs, 0) + ' ms', 'observed RTT');
 if (D.stats.floorMs) chip(fmt(D.stats.floorMs, 0) + ' ms', 'fibre floor');
+if ((D.nets || []).filter((n) => n.key !== 'local').length) chip(String(D.nets.filter((n) => n.key !== 'local').length), 'networks');
 if (D.warnings) chip(String(D.warnings), D.warnings === 1 ? 'doubtful location' : 'doubtful locations', 'warn');
 if (!D.cables.real) chip('illustrative cables', '', 'warn');
 else if (D.cables.note) chip('cached cable data', '', 'warn');

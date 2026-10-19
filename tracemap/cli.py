@@ -56,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="also write the classic static PNG map (default: only when no cable map is made)")
     p.add_argument("--no-rdns", action="store_true",
                    help="do not look up router hostnames (they are used as location hints)")
+    p.add_argument("--asn-file", type=Path, metavar="JSON",
+                   help="prefix to AS number/name entries, used before any lookup (see samples/asn_sample.json)")
+    p.add_argument("--no-asn", action="store_true",
+                   help="do not look up which network (AS) each hop belongs to")
     p.add_argument("--refresh-cables", action="store_true",
                    help="ignore the cached cable data and download it again")
     p.add_argument("--open", action="store_true",
@@ -117,6 +121,17 @@ def main(argv: Optional[list[str]] = None) -> int:
                 geo[r.ip] = resolver.lookup(r.ip)
     resolver.save()
 
+    # Which network owns each hop (RIPEstat, cache, or --asn-file).
+    asn_map = {}
+    if not args.no_asn:
+        from .asn import AsnResolver, default_cache_path as asn_cache
+
+        ar = AsnResolver(asn_file=args.asn_file, use_network=not args.offline,
+                         cache_path=None if args.no_cache else asn_cache())
+        asn_map = {ip: v for ip, v in ar.lookup_many(
+            [r.ip for hop in trace.hops for r in hop.responders]).items() if v}
+        ar.save()
+
     # Router hostnames (airport and city codes) can check or correct the IP-database locations.
     from .hints import apply_hints, reverse_dns
 
@@ -148,6 +163,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "hostname": r.hostname or names.get(r.ip),
                         "rtts_ms": r.rtts,
                         "location": (geo[r.ip].label if geo.get(r.ip) else None),
+                        "asn": (asn_map[r.ip].asn if asn_map.get(r.ip) else None),
+                        "network": (asn_map[r.ip].name if asn_map.get(r.ip) else None),
                         "location_source": (geo[r.ip].source if geo.get(r.ip) else None),
                         "location_note": (geo[r.ip].note if geo.get(r.ip) else None),
                         "lat": geo[r.ip].lat if geo.get(r.ip) else None,
@@ -180,10 +197,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 1
         if cs.note:
             print(f"note:   {cs.note}", file=sys.stderr)
-        mdata = build_map_data(trace, geo, method, cs, args.origin)
+        mdata = build_map_data(trace, geo, method, cs, args.origin, asn=asn_map)
         if mdata:
             map_doc = render_map(mdata)
-            cable_html = cable_section_html(mdata)
+            from .mapviz import network_section_html
+            cable_html = cable_section_html(mdata) + network_section_html(mdata)
             hop_notes = hop_cable_notes(mdata)
             mp = args.outdir / f"route_{safe}_map.html"
             mp.write_text(map_doc, encoding="utf-8")
@@ -214,7 +232,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         png_b64 = base64.b64encode(png.read_bytes()).decode() if (located and png.exists() and not map_doc) else None
         html = args.outdir / f"route_{safe}.html"
-        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html, hop_notes, findings), encoding="utf-8")
+        html.write_text(render_report(trace, geo, method, png_b64, args.origin, map_doc, cable_html, hop_notes, findings, asn_map), encoding="utf-8")
         print(f"report: {html}")
         if args.open:
             import webbrowser
