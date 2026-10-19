@@ -48,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="draw your own location as the start of the route")
     p.add_argument("-o", "--outdir", type=Path, default=Path("output"),
                    help="where to write the PNG, HTML and JSON (default ./output)")
+    p.add_argument("--cables", choices=["auto", "telegeography", "illustrative", "none"],
+                   default="auto", help="submarine cable data for the interactive map (default auto)")
+    p.add_argument("--cables-file", type=Path, metavar="GEOJSON",
+                   help="use your own cable GeoJSON instead of downloading")
+    p.add_argument("--no-map", action="store_true", help="skip the interactive cable map")
     p.add_argument("--no-report", action="store_true", help="skip the HTML packet-path report")
     p.add_argument("--show", action="store_true", help="open an interactive map window")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -155,6 +160,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         html = args.outdir / f"route_{safe}.html"
         html.write_text(render_report(trace, geo, method, png_b64, args.origin), encoding="utf-8")
         print(f"report: {html}")
+
+    if not args.no_map and args.cables != "none":
+        from .cables import load_cables
+        from .mapviz import build_map_data, render_map
+
+        cs = load_cables(args.cables, args.cables_file, offline=args.offline)
+        mdata = build_map_data(trace, geo, method, cs, args.origin)
+        if mdata:
+            mp = args.outdir / f"route_{safe}_map.html"
+            mp.write_text(render_map(mdata), encoding="utf-8")
+            print(f"map:    {mp}  (cables: {cs.source})")
+        else:
+            print("map:    skipped (no hop could be located)")
 
     print(f"{len(trace.hops)} hops, destination {'reached' if trace.reached else 'not reached'}")
     return 0

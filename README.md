@@ -115,3 +115,21 @@ python -m pytest
   binary, no outbound access). Live mode was tested with a stand-in executable that prints the
   sample output; the argument list, parsing and validation paths are real. Please try it once on
   your machine against a real host.
+
+## Interactive submarine-cable map
+
+Every run also writes `route_<target>_map.html`: a single offline file with a zoomable map, submarine
+cables, and the packets animated along the inferred route (probe-by-probe or continuous flow).
+
+```
+python -m tracemap.cli --input samples/traceroute_sample.txt --geo-file samples/geo_sample.json \
+    --offline --origin 12.97,77.59 --cables illustrative -o example_output
+```
+
+* `--cables auto|telegeography|illustrative|none`, `--cables-file my.geojson`, `--no-map`.
+* **The cable path is inferred, not measured.** Traceroute shows IP hops, not cables. The route is the
+  shortest path over a graph of cable landings (plus straight-line overland links, drawn dashed gold).
+* `illustrative` corridors are hand-placed approximations bundled for offline use and are labelled as such
+  on the map. Real data is TeleGeography's submarine cable map (CC BY-NC-SA, non-commercial; credit shown on
+  the map), downloaded at run time and cached, never bundled. The live download is untested in the
+  sandbox where this was developed, so check it on your machine.
