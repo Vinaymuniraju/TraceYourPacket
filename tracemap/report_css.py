@@ -37,7 +37,7 @@ svg .ttl{fill:var(--bg);stroke:var(--fw);stroke-width:1.5}
 svg .ttl0{fill:var(--bg);stroke:var(--bad);stroke-width:2}
 .legend{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0;font-size:13px}
 .legend i{display:inline-block;width:26px;height:0;border-top:3px solid;vertical-align:middle;margin-right:6px}
-table.hops{width:100%;border-collapse:collapse;font-size:13.5px}
+table.hops{display:block;overflow-x:auto;max-width:100%;width:100%;border-collapse:collapse;font-size:13.5px}
 table.hops th,table.hops td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 table.hops th{color:var(--muted);font-weight:600}
 .bar{height:8px;background:var(--fw);border-radius:4px;min-width:2px}

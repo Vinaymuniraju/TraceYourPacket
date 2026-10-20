@@ -97,3 +97,23 @@ def test_no_rdns_and_offline_never_resolve_names(tmp_path, monkeypatch):
                    "--no-cache", "--cables", "illustrative", "--origin", "12.97,77.59",
                    "-o", str(tmp_path / extra[0].strip("-")), *extra])
         assert rc == 0
+
+
+def test_missing_matplotlib_gives_message_not_traceback(tmp_path, monkeypatch, capsys):
+    import builtins
+    real = builtins.__import__
+
+    def fake(name, *a, **k):
+        if name.startswith("matplotlib"):
+            raise ImportError("no matplotlib")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake)
+    S = Path(__file__).resolve().parent.parent / "samples"
+    rc = main(["example.com", "--input", str(S / "traceroute_sample.txt"), "--offline", "--no-cache",
+               "--geo-file", str(S / "geo_sample.json"), "--no-map", "--png", "-o", str(tmp_path)])
+    assert rc == 1
+    assert "optional plotting packages" in capsys.readouterr().err
+    rc = main(["example.com", "--input", str(S / "traceroute_sample.txt"), "--offline", "--no-cache",
+               "--geo-file", str(S / "geo_sample.json"), "--no-map", "-o", str(tmp_path)])
+    assert rc == 0

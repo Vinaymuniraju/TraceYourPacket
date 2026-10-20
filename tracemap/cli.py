@@ -256,16 +256,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         if located:
             try:
                 from .plot import plot_route
+                plot_route(located, png, show=args.show, origin=an.origin,
+                           title=f"Route to {trace.target} ({trace.target_ip})")
+                print(f"map:    {png}")
             except ImportError:
-                plot_route = None
                 print('error: the static PNG needs the optional plotting packages: '
                       'pip install "traceyourpacket[png]"', file=sys.stderr)
                 if args.png:
                     return 1
-            if plot_route:
-                plot_route(located, png, show=args.show, origin=an.origin,
-                           title=f"Route to {trace.target} ({trace.target_ip})")
-                print(f"map:    {png}")
         else:
             print("note: no hop could be located, so no map was drawn")
 
