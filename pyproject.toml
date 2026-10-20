@@ -18,6 +18,7 @@ dev = ["pytest>=7"]
 [project.scripts]
 tracemap = "tracemap.cli:main"
 traceyourpacket = "tracemap.cli:main"
+tracemap-web = "tracemap.web:main"
 
 [tool.setuptools]
 packages = ["tracemap", "tracemap.assets"]

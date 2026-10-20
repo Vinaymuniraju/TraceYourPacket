@@ -131,6 +131,29 @@ Exit codes: `0` success, `1` the traceroute failed or required data was unavaila
 | `illustrative` | Bundled hand-placed corridors. Always works offline, clearly labelled on the map |
 | `none` | No cables; the route is drawn as plain great-circle legs |
 
+### Web page
+
+`tracemap-web` serves a search page: type a website, a URL or an IPv4 address, and the report appears
+in the page with the animated cable map. It uses only the standard library and runs the normal
+`tracemap` command for each request, one trace at a time.
+
+```
+pip install .
+tracemap-web --origin 12.97,77.59 --origin-name Bengaluru              # this machine only: http://localhost:8080
+tracemap-web --host 0.0.0.0 --port 8080 --origin 12.97,77.59           # whole home network
+```
+
+- The probes start from the machine running the server, not from the visitor's device. The page says so.
+- Private, loopback, link-local, carrier-grade NAT, multicast and reserved addresses are refused, so the
+  page cannot be used to probe the network it runs on. The address that was checked is the one traced.
+- One trace at a time, a short queue, a per-visitor limit, and finished traces to the same IP are reused
+  for 10 minutes (`--cache-seconds`). Reports are kept in a temporary folder and deleted after an hour.
+- Reports are served in a sandboxed frame with a restrictive Content-Security-Policy.
+- It has no login. Bind it to `0.0.0.0` only on a network you trust. Putting it on the public internet
+  needs a reverse proxy that passes the real client address, TLS and its own rate limiting; the built-in
+  limits see only the proxy's address.
+- The cable data is CC BY-NC-SA 3.0 (non-commercial), so keep the site non-commercial.
+
 ## Reading the map
 
 - **Dark world map** with country borders, a graticule, and every cable drawn as a glowing line.
@@ -331,6 +354,7 @@ vis_route.py             entry point (calls tracemap.cli)
 tracemap/
   cli.py                 argument parsing, orchestration, outputs
   runner.py              target validation, building and running traceroute (no shell)
+  web.py                 tracemap-web: search page, job queue, limits, sandboxed report serving
   parser.py              Linux/macOS and Windows output parser
   geo.py                 IP classification, geolocation with cache, haversine
   cables.py              cable data loading (download, validate, cache), graph, Dijkstra routing

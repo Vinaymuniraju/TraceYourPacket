@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceYourPacket</title>
+<style>
+:root{
+  --bg:#050912; --panel:#0b1226; --ink:#e6edf7; --mute:#8b9ab3; --line:rgba(255,255,255,.12);
+  --accent:#7c9cff; --accent-ink:#06102a; --out:#8be9ff; --err:#ff8a9f; --ok:#5df2a8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{min-height:100vh;display:flex;flex-direction:column;
+  background:radial-gradient(1200px 600px at 50% -10%,#0f1c40 0%,var(--bg) 65%) no-repeat}
+main{width:100%;max-width:1100px;margin:0 auto;padding:40px 16px 24px;flex:1;display:flex;flex-direction:column}
+h1{margin:0;font-size:clamp(1.6rem,4vw,2.3rem);letter-spacing:-.02em}
+.tag{margin:6px 0 24px;color:var(--mute)}
+form{display:flex;gap:8px;flex-wrap:wrap}
+label{position:absolute;left:-9999px}
+input[type=text]{flex:1 1 280px;min-width:0;padding:14px 16px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);font:inherit}
+input[type=text]::placeholder{color:#6c7a94}
+input[type=text]:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{padding:14px 22px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);
+  font:inherit;font-weight:600;cursor:pointer}
+button[disabled]{opacity:.55;cursor:progress}
+.note{margin:10px 2px 0;color:var(--mute);font-size:.88rem}
+#status{margin-top:20px;min-height:1.5em}
+.row{display:flex;align-items:center;gap:10px}
+.spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--out);
+  animation:s 0.9s linear infinite;flex:none}
+@keyframes s{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none;border-top-color:var(--out)}}
+.err{color:var(--err)}
+.ok{color:var(--ok)}
+pre{margin:12px 0 0;max-height:220px;overflow:auto;padding:12px 14px;border-radius:12px;background:var(--panel);
+  border:1px solid var(--line);color:#c6d3ea;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  white-space:pre-wrap;word-break:break-word}
+#result{margin-top:20px;display:none;flex:1;flex-direction:column;gap:8px}
+#result.show{display:flex}
+#bar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--mute);font-size:.9rem}
+#bar a{color:var(--accent)}
+iframe{width:100%;height:max(80vh,560px);border:1px solid var(--line);border-radius:12px;background:#050912}
+footer{padding:16px;text-align:center;color:var(--mute);font-size:.82rem}
+footer a{color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+  <h1>TraceYourPacket</h1>
+  <p class="tag">See your packets cross the ocean floor.</p>
+
+  <form id="f" autocomplete="off">
+    <label for="t">Website or IP address</label>
+    <input id="t" type="text" inputmode="url" spellcheck="false" autocapitalize="none" maxlength="300"
+           placeholder="example.com, https://example.org/page or 8.8.8.8" required>
+    <button id="go" type="submit">Trace</button>
+  </form>
+  <p class="note" id="origin">Probes start from this server, not from your device.</p>
+
+  <div id="status" role="status" aria-live="polite"></div>
+  <pre id="log" hidden></pre>
+
+  <section id="result" aria-label="Route report">
+    <div id="bar"><span id="title"></span><span><a id="open" target="_blank" rel="noopener">Open full screen</a></span></div>
+    <iframe id="frame" title="Route report" sandbox="allow-scripts"></iframe>
+  </section>
+</main>
+<footer>The cable path is inferred, not measured. Cable data: TeleGeography (CC BY-NC-SA 3.0).</footer>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("f"), input = $("t"), go = $("go"), statusEl = $("status"), logEl = $("log"),
+      result = $("result"), frame = $("frame"), timer = null, started = 0, busy = false;
+
+  function setStatus(text, cls, spin) {
+    statusEl.textContent = "";
+    var row = document.createElement("div");
+    row.className = "row" + (cls ? " " + cls : "");
+    if (spin) { var s = document.createElement("span"); s.className = "spin"; row.appendChild(s); }
+    var t = document.createElement("span"); t.textContent = text; row.appendChild(t);
+    statusEl.appendChild(row);
+  }
+  function setBusy(b) { busy = b; go.disabled = b; go.textContent = b ? "Tracing…" : "Trace"; }
+  function stop() { if (timer) { clearInterval(timer); timer = null; } setBusy(false); }
+  function fail(msg) { stop(); setStatus(msg, "err", false); }
+
+  function showLog(lines) {
+    if (!lines || !lines.length) { logEl.hidden = true; return; }
+    logEl.hidden = false;
+    logEl.textContent = lines.join("\n");
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function poll(id) {
+    fetch("/api/jobs/" + encodeURIComponent(id), { cache: "no-store" })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (!x.ok) { return fail(x.j.error || "Lost track of that trace."); }
+        var j = x.j;
+        showLog(j.lines);
+        if (j.state === "queued") {
+          setStatus(j.ahead ? "Waiting for " + j.ahead + " other trace" + (j.ahead > 1 ? "s" : "") + "…" : "Starting…", "", true);
+        } else if (j.state === "running") {
+          setStatus("Tracing the route to " + j.target + " (" + j.ip + ")…", "", true);
+        } else if (j.state === "error") {
+          fail(j.error || "The trace failed.");
+        } else if (j.state === "done") {
+          stop();
+          setStatus("Route to " + j.target + (j.target !== j.ip ? " (" + j.ip + ")" : "") + " ready.", "ok", false);
+          logEl.hidden = true;
+          $("title").textContent = j.target + " · " + j.ip + (j.reused ? " · reused a recent trace" : "");
+          $("open").href = j.report;
+          frame.src = j.report;
+          result.classList.add("show");
+          result.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        if (Date.now() - started > 6 * 60 * 1000 && timer) { fail("This is taking too long. Try again."); }
+      })
+      .catch(function () { fail("Could not reach the server."); });
+  }
+
+  function start(raw) {
+    if (busy) { return; }
+    result.classList.remove("show"); frame.removeAttribute("src"); showLog(null);
+    setBusy(true); setStatus("Checking " + raw + "…", "", true);
+    fetch("/api/trace", { method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ target: raw }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+      .then(function (x) {
+        if (!x.ok) {
+          return fail(x.j.error || "Request failed.");
+        }
+        started = Date.now();
+        history.replaceState(null, "", "#" + encodeURIComponent(x.j.target));
+        poll(x.j.id);
+        timer = setInterval(function () { poll(x.j.id); }, 1500);
+      })
+      .catch(function () { fail("Could not reach the server."); });
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var v = input.value.trim();
+    if (v) { start(v); }
+  });
+
+  fetch("/api/info").then(function (r) { return r.json(); }).then(function (i) {
+    if (i && i.origin_name) {
+      $("origin").textContent = "Probes start from " + i.origin_name + " (where this server is), not from your device.";
+    }
+  }).catch(function () {});
+
+  if (location.hash.length > 1) {
+    try { input.value = decodeURIComponent(location.hash.slice(1)); start(input.value); } catch (e) {}
+  }
+})();
+</script>
+</body>
+</html>
